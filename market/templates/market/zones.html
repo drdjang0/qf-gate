@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% load tz market_extras %}
+{% block title %}{{ coin.pair }} zones · QF-gate{% endblock %}
+{% block main_attrs %} style="max-width:1600px"{% endblock %}
+{% block head %}
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  .bar { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; }
+  .bar form { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0; }
+  .bar label { display:inline; font-weight:400; margin:0; color:var(--muted); }
+  .bar input, .bar select { width:auto; }
+  .up { color:#16a34a; } .down { color:#dc2626; }
+  .hm { border-collapse:separate; border-spacing:1px; width:auto; }
+  .hm td, .hm th { padding:0; border:0; height:16px; }
+  .hm td.c { width:12px; min-width:12px; border-radius:2px; background:var(--line); }
+  .hm th.p { padding:0 8px 0 0; font-size:11px; text-align:right; text-transform:none; letter-spacing:0; font-weight:400; }
+  .hm tr.now th.p { color:var(--accent); font-weight:700; }
+  .hm .d { font-size:10px; color:var(--muted); writing-mode:vertical-rl; transform:rotate(180deg); height:auto; padding-top:4px; }
+  details summary { cursor:pointer; color:var(--accent); }
+  details ul { margin:4px 0 0; padding-left:16px; font-size:12px; }
+  tr.here td { background:rgba(37,99,235,.08); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="bar">
+    <h2 style="margin:0">Zones</h2>
+    <select aria-label="Coin" onchange="location.href=this.value">{% for c in coins %}<option value="{% url 'market:zones_page' c.pk %}?width={{ width }}"{% if c.pk == coin.pk %} selected{% endif %}>{{ c.pair }}</option>{% endfor %}</select>
+    <form method="get">
+      <label for="w">Zone width ±%</label><input id="w" type="number" name="width" value="{{ width }}" min="0.1" max="5" step="0.1" style="width:80px">
+      <label for="dd">Days</label><select id="dd" name="days">{% for d in day_choices %}<option value="{{ d }}"{% if d == days %} selected{% endif %}>{{ d }}</option>{% endfor %}</select>
+      <label for="k">Show</label><select id="k" name="kind"><option value="all">High + Low</option><option value="high"{% if kind == "high" %} selected{% endif %}>High zones</option><option value="low"{% if kind == "low" %} selected{% endif %}>Low zones</option></select>
+      <label for="m">Min touches</label><input id="m" type="number" name="min" value="{{ min_touches }}" min="0" style="width:70px">
+      <button class="btn primary">Apply</button>
+    </form>
+    <span style="margin-left:auto"></span>
+    <a class="btn" href="{% url 'market:zones_export' coin.pk %}?width={{ width }}&days={{ days }}">Export Excel</a>
+    <a class="btn" href="{% url 'market:market_page' coin.pk %}">Market</a>
+  </div>
+  <p class="muted" style="margin:8px 0 0;font-size:12px">Every stored day's high and low gets a zone of ±{{ width }}%.
+    <b>Forward-only:</b> a zone is only counted as touched by days <i>after</i> it formed, and a day touches it when its
+    range overlaps the zone (trading straight through counts). The touch time is the first minute price entered the zone.
+    <b>Held / broke</b> is judged on that day's close against where price came from (the previous close):
+    a high zone hit from below breaks if the day closes above it. <i>Inside</i> means the previous close was already in the zone;
+    <i>live</i> is today's unfinished day. Days and times in {{ day_tz }}.</p>
+</div>
+
+{% if r.zones %}
+<div class="card grid">
+  <div class="stat"><span class="muted">Days analysed</span><b>{{ r.days|length }}</b></div>
+  <div class="stat"><span class="muted">Zones (high + low)</span><b>{{ r.zones|length }}</b></div>
+  <div class="stat"><span class="muted">Zones price returned to</span><b>{{ touched }}</b></div>
+  <div class="stat"><span class="muted">Total touches</span><b>{{ touch_total }}</b></div>
+  <div class="stat"><span class="muted">Held (of held + broke)</span><b>{% if held_pct is not None %}{{ held_pct|floatformat:0 }}%{% else %}—{% endif %}</b></div>
+  <div class="stat"><span class="muted">Price now</span><b class="mono">{{ r.price|fprice }}</b></div>
+</div>
+
+{% include "market/_live_chart.html" %}
+<script>
+(function () {
+  const COLORS = ['#7c3aed', '#0891b2', '#ea580c', '#db2777', '#65a30d', '#0d9488', '#9333ea', '#ca8a04'];
+  const bands = {{ bands_json|safe }}.map((b, i) => ({ ...b, color: COLORS[i % COLORS.length] }));
+  const near = bands.filter(b => Math.abs((b.lower + b.upper) / 2 / {{ r.price|stringformat:"f" }} - 1) <= 0.10);
+  const box = document.createElement('label');
+  box.className = 'muted';
+  box.innerHTML = '<select id="band-mode" style="width:auto;padding:2px 4px"><option value="near">Hotspots within 10%</option>' +
+    '<option value="all">All hotspots</option><option value="none">No hotspots</option></select>';
+  document.getElementById('show-marks').closest('label').after(box);
+  const draw = () => { const m = document.getElementById('band-mode').value;
+    if (window.qfChart) window.qfChart.setBands(m === 'all' ? bands : m === 'near' ? near : []); };
+  document.getElementById('band-mode').addEventListener('change', draw);
+  draw();
+  window.addEventListener('DOMContentLoaded', () => document.querySelectorAll('[data-band]').forEach((el) => {
+    el.style.borderLeft = '4px solid ' + COLORS[Number(el.dataset.band) % COLORS.length];
+  }));
+})();
+</script>
+
+<div class="card scroll">
+  <h3 style="margin-top:0">Hotspots · where price came back most often</h3>
+  <table>
+    <thead><tr><th>#</th><th class="num">Band</th><th class="num">Days returned</th><th class="num">Held</th><th class="num">Broke</th>
+      <th class="num">Highs / lows formed here</th><th>First formed</th><th>Last touch</th><th class="num">From price now</th></tr></thead>
+    <tbody>{% for h in r.hotspots %}
+      <tr{% if h.here %} class="here"{% endif %}>
+        <td data-band="{{ forloop.counter0 }}">#{{ forloop.counter }}</td>
+        <td class="num mono">{{ h.lower|fprice }} – {{ h.upper|fprice }}</td>
+        <td class="num"><b>{{ h.touches }}</b></td>
+        <td class="num up">{{ h.held }}</td>
+        <td class="num down">{{ h.broke }}</td>
+        <td class="num">{{ h.highs }} / {{ h.lows }}</td>
+        <td class="mono">{{ h.formed|date:"Y-m-d" }}</td>
+        <td class="mono">{{ h.last_touch|date:"Y-m-d"|default:"—" }}</td>
+        <td class="num {% if h.dist > 0 %}up{% elif h.dist < 0 %}down{% endif %}">{% if h.here %}price is here{% else %}{% if h.dist > 0 %}+{% endif %}{{ h.dist|floatformat:2 }}%{% endif %}</td>
+      </tr>
+    {% empty %}<tr><td colspan="9" class="muted">Price hasn't returned to any zone yet.</td></tr>{% endfor %}</tbody>
+  </table>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Each band is one zone wide. "Days returned" counts distinct days that traded in the band
+    after the first high/low formed there, so overlapping zones can't inflate it. Bands never overlap; they're drawn on the chart above.</p>
+</div>
+
+{% if r.heatmap %}
+<div class="card scroll">
+  <h3 style="margin-top:0">Heatmap · zone touches per day and price band</h3>
+  <table class="hm">
+    <tbody>
+    {% for row in r.heatmap.rows %}
+      <tr{% if r.price >= row.lower and r.price < row.upper %} class="now"{% endif %}>
+        <th class="p mono">{{ row.lower|fprice }}{% if r.price >= row.lower and r.price < row.upper %} ◀{% endif %}</th>
+        {% for c in row.cells %}<td class="c" {% if c.n %}style="background:rgba(234,88,12,{{ c.a|floatformat:"3u" }})" {% endif %}title="{{ c.n }} zone touch{{ c.n|pluralize:"es" }}"></td>{% endfor %}
+      </tr>
+    {% endfor %}
+      <tr><th></th>{% for d in r.heatmap.days %}<td class="d">{% if forloop.counter0|divisibleby:7 or forloop.last %}{{ d|date:"m-d" }}{% endif %}</td>{% endfor %}</tr>
+    </tbody>
+  </table>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Rows are price bands one zone wide (lower edge shown; ◀ marks the current price),
+    columns are days. Darker = more earlier zones touched in that band that day (max {{ r.heatmap.peak }}). Hover a cell for the count.</p>
+</div>
+{% endif %}
+
+<div class="card scroll">
+  <h3 style="margin-top:0">Zones <span class="muted">({{ rows|length }} shown, newest first)</span></h3>
+  <table>
+    <thead><tr><th>Date</th><th>Type</th><th class="num">Level</th><th>At</th><th class="num">Zone</th><th class="num">Touches</th>
+      <th class="num">Held</th><th class="num">Broke</th><th>First touch</th><th>Last touch</th><th class="num">From price now</th><th>Touches</th></tr></thead>
+    <tbody>
+    {% timezone day_tz %}
+    {% for row in rows %}{% with z=row.zone %}
+      <tr>
+        <td class="mono">{{ z.date|date:"D Y-m-d" }}</td>
+        <td class="{% if z.kind == 'high' %}up{% else %}down{% endif %}">{{ z.kind|title }}</td>
+        <td class="num mono">{{ z.price|fprice }}</td>
+        <td class="mono">{{ z.level_time|date:"H:i" }}</td>
+        <td class="num mono muted">{{ z.lower|fprice }} – {{ z.upper|fprice }}</td>
+        <td class="num"><b>{{ z.touches|length }}</b></td>
+        <td class="num up">{{ z.held }}</td>
+        <td class="num down">{{ z.broke }}</td>
+        <td class="mono">{% with t=z.touches.0 %}{% if t %}{{ t.date|date:"m-d" }} {{ t.time|date:"H:i" }}{% else %}—{% endif %}{% endwith %}</td>
+        <td class="mono">{{ z.last_touch.date|date:"m-d"|default:"—" }}</td>
+        <td class="num">{% if row.dist > 0 %}+{% endif %}{{ row.dist|floatformat:2 }}%</td>
+        <td>{% if z.touches %}<details><summary>{{ z.touches|length }} day{{ z.touches|length|pluralize }}</summary><ul>
+          {% for t in z.touches %}<li class="mono">{{ t.date|date:"Y-m-d" }} {{ t.time|date:"H:i"|default:"--:--" }} · <span class="{% if t.result == 'held' %}up{% elif t.result == 'broke' %}down{% else %}muted{% endif %}">{{ t.result }}</span></li>{% endfor %}
+        </ul></details>{% else %}<span class="muted">untouched</span>{% endif %}</td>
+      </tr>
+    {% endwith %}{% empty %}
+      <tr><td colspan="12" class="muted">No zones match these filters.</td></tr>
+    {% endfor %}
+    {% endtimezone %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card muted">No daily levels stored for {{ coin.pair }} yet. Open <a href="{% url 'market:coin_detail' coin.pk %}">the coin page</a> and press Sync.</div>
+{% endif %}
+{% endblock %}

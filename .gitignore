@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.env
+db.sqlite3*
+var/
+staticfiles/
+*.xlsx
+!btc historical pdh pdl.xlsx
+.venv/
+# local-only files
+.claude/settings.local.json
+backup.json
+*.part
+*.csv.gz
+*.log

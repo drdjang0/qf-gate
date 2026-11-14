@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% load market_extras %}
+{% block title %}Backtest #{{ run.pk }} · QF-gate{% endblock %}
+{% block head %}{% if run.status == "queued" or run.status == "running" %}<meta http-equiv="refresh" content="3">{% endif %}
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin:0">Backtest #{{ run.pk }} · <a href="{% url 'trading:strategy_detail' run.config_id %}">{{ run.config.name }}</a></h2>
+  <p class="muted" style="margin-bottom:0">{{ run.strategy_key }} · <span class="mono">{{ run.config.coin.pair }}</span> · {{ run.interval }} ·
+    {{ run.start|date:"Y-m-d H:i" }} → {{ run.end|date:"Y-m-d H:i" }} UTC · {{ run.bars }} bars ·
+    <span class="badge {% if run.status == 'done' %}ok{% elif run.status == 'failed' %}err{% else %}warn{% endif %}">{{ run.get_status_display }}</span></p>
+  {% if run.message %}<p class="err">{{ run.message }}</p>{% endif %}
+</div>
+
+{% if run.status == "done" %}
+<div class="card grid">
+  <div class="stat"><span class="muted">Return</span><b class="{% if m.return_pct >= 0 %}ok{% else %}err{% endif %}">{{ m.return_pct|floatformat:2 }}%</b></div>
+  <div class="stat"><span class="muted">Buy &amp; hold</span><b>{{ m.buy_hold_pct|floatformat:2 }}%</b></div>
+  <div class="stat"><span class="muted">Net profit</span><b>{{ m.net_profit|floatformat:2 }}</b></div>
+  <div class="stat"><span class="muted">Max drawdown</span><b>{{ m.max_drawdown_pct|floatformat:2 }}%</b></div>
+  <div class="stat"><span class="muted">Trades</span><b>{{ m.trades }}</b></div>
+  <div class="stat"><span class="muted">Win rate</span><b>{% if m.win_rate_pct is not None %}{{ m.win_rate_pct|floatformat:0 }}%{% else %}—{% endif %}</b></div>
+  <div class="stat"><span class="muted">Profit factor</span><b>{{ m.profit_factor|floatformat:2|default:"—" }}</b></div>
+  <div class="stat"><span class="muted">Avg R</span><b>{{ m.avg_r|floatformat:2|default:"—" }}</b></div>
+  <div class="stat"><span class="muted">Fees paid</span><b>{{ m.fees|floatformat:2 }}</b></div>
+  <div class="stat"><span class="muted">Time in market</span><b>{{ m.exposure_pct|floatformat:1 }}%</b></div>
+  <div class="stat"><span class="muted">Sharpe (daily)</span><b>{{ m.sharpe|floatformat:2|default:"—" }}</b></div>
+  <div class="stat"><span class="muted">Sortino (daily)</span><b>{{ m.sortino|floatformat:2|default:"—" }}</b></div>
+  <div class="stat"><span class="muted">Calmar</span><b>{{ m.calmar|floatformat:2|default:"—" }}</b></div>
+  {% if m.funding or m.liquidations %}<div class="stat"><span class="muted">Futures: funding paid / liquidations</span><b>{{ m.funding|floatformat:2 }} / {{ m.liquidations }}</b></div>{% endif %}
+  <div class="stat"><span class="muted">Skipped entries</span><b>{{ m.skipped_entries }}</b></div>
+  <div class="stat"><span class="muted">Stop vs target decided by 1m</span><b>{{ m.intrabar_resolved|default:0 }}</b><span class="muted">bars that touched both</span></div>
+  <div class="stat"><span class="muted">Blocked by protections</span><b>{% if m.blocked_entries %}{% for k, v in m.blocked_entries.items %}{{ v }} {{ k }}{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}0{% endif %}</b></div>
+</div>
+
+<div class="card">
+  <b>Equity</b>
+  <div id="equity-chart" style="height:220px;margin-top:8px"></div>
+</div>
+{{ run.equity|json_script:"equity-data" }}
+<script>
+(function () {
+  if (!window.LightweightCharts) return;
+  const css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
+  const c = LightweightCharts.createChart(document.getElementById('equity-chart'), {
+    autoSize: true, layout: { background: { color: v('--card') }, textColor: v('--ink') },
+    grid: { vertLines: { color: v('--line') }, horzLines: { color: v('--line') } }, timeScale: { timeVisible: true },
+  });
+  const s = c.addAreaSeries({ lineColor: '#2563eb', topColor: 'rgba(37,99,235,.25)', bottomColor: 'rgba(37,99,235,0)', lineWidth: 2 });
+  s.setData(JSON.parse(document.getElementById('equity-data').textContent).map(([t, e]) => ({ time: t, value: e })));
+  c.timeScale().fitContent();
+})();
+</script>
+
+{% include "trading/_price_chart.html" %}
+
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h3 style="margin:0">Signals</h3>
+    {% for k, v in signal_counts.items %}<span class="badge {% if k == 'queued' %}ok{% else %}warn{% endif %}">{{ v }} {{ k }}</span>{% empty %}<span class="muted">none recorded</span>{% endfor %}
+    <a class="btn" style="margin-left:auto" href="{% url 'trading:backtest_signals_csv' run.pk %}">Export signals (CSV)</a>
+  </div>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Every signal the strategy gave in the test window. "queued" became an order at the next open;
+    grey b / s markers on the chart are signals that were blocked (protections, order-flow filter) or ignored (already in a position).
+    Lines on the chart are the strategy's own levels.</p>
+</div>
+
+{% include "trading/_breakdowns.html" %}
+
+<div class="card scroll">
+  <h3 style="margin-top:0">Trades ({{ trades|length }})</h3>
+  <table>
+    <thead><tr><th>Side</th><th>Entry (UTC)</th><th>Entry</th><th>Exit (UTC)</th><th>Exit</th><th>Stop</th><th>Target</th><th>Qty</th><th>P&amp;L</th><th>R</th><th>Exit</th><th>Why</th></tr></thead>
+    <tbody>{% for t in trades %}
+      <tr>
+        <td class="{% if t.side == 'short' %}err{% else %}ok{% endif %}">{{ t.side }}</td><td class="mono">{{ t.entry_time|date:"m-d H:i" }}</td><td class="num">{{ t.entry_price|floatformat:4 }}</td>
+        <td class="mono">{{ t.exit_time|date:"m-d H:i" }}</td><td class="num">{{ t.exit_price|floatformat:4 }}</td>
+        <td class="num muted">{{ t.stop|floatformat:4 }}</td><td class="num muted">{{ t.target|floatformat:4|default:"—" }}</td>
+        <td class="num">{{ t.qty|floatformat:6 }}</td>
+        <td class="num {% if t.pnl >= 0 %}ok{% else %}err{% endif %}">{{ t.pnl|floatformat:2 }}</td>
+        <td class="num">{{ t.r_multiple|floatformat:2 }}</td><td>{{ t.exit_reason }}</td>
+        <td class="muted" style="white-space:normal">{{ t.entry_reason }}</td>
+      </tr>
+    {% empty %}<tr><td colspan="12" class="muted">No trades in this period.</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

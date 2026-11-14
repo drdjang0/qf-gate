@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "qfgate-web", "runtimeExecutable": "python", "runtimeArgs": ["manage.py", "runserver", "127.0.0.1:8000", "--noreload"], "port": 8000 }
+  ]
+}

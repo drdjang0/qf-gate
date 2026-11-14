@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Strategies · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:12px">
+    <h2 style="margin:0">Strategies</h2>
+    <a class="btn primary" style="margin-left:auto" href="{% url 'trading:strategy_create' %}">New strategy</a>
+  </div>
+  <p class="muted" style="margin-bottom:0">Backtest a strategy on stored candles, then paper-trade it on live bars.
+    The same engine runs both, so their results are directly comparable.</p>
+</div>
+<div class="card scroll">
+  <table>
+    <thead><tr><th>Name</th><th>Strategy</th><th>Coin</th><th>TF</th><th>Last backtest</th><th>Trades</th><th>Max DD</th><th>Paper</th></tr></thead>
+    <tbody>
+    {% for r in rows %}{% with c=r.config b=r.last_backtest %}
+      <tr>
+        <td><a href="{% url 'trading:strategy_detail' c.pk %}"><b>{{ c.name }}</b></a></td>
+        <td class="muted">{{ c.strategy_key }}</td>
+        <td class="mono">{{ c.coin.pair }}</td>
+        <td>{{ c.interval }}</td>
+        {% if b %}
+        <td class="num {% if b.metrics.return_pct >= 0 %}ok{% else %}err{% endif %}">{{ b.metrics.return_pct|floatformat:2 }}%</td>
+        <td class="num">{{ b.metrics.trades }}</td>
+        <td class="num">{{ b.metrics.max_drawdown_pct|floatformat:2 }}%</td>
+        {% else %}<td class="muted">—</td><td></td><td></td>{% endif %}
+        <td>{% if r.paper %}<a href="{% url 'trading:paper_detail' r.paper.pk %}"><span class="badge ok">running</span></a>{% else %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+    {% endwith %}{% empty %}
+      <tr><td colspan="8" class="muted">No strategies yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,167 @@
+<div class="card chart-card">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">
+    <div class="seg" id="intervals">{% for i in chart_intervals %}<button type="button" data-i="{{ i }}">{{ i }}</button>{% endfor %}</div>
+    <label class="muted"><input type="checkbox" id="show-pd" checked> PDH / PDL</label>
+    <label class="muted"><input type="checkbox" id="show-day" checked> Day high / low</label>
+    <label class="muted"><input type="checkbox" id="show-marks" checked> H/L time markers</label>
+    <label class="muted" title="Taker buy minus taker sell volume per bar (green = buyers more aggressive) and its running total (purple line, CVD)"><input type="checkbox" id="show-flow"> Order flow</label>
+    <span id="chart-status" class="muted mono" style="margin-left:auto"></span>
+  </div>
+  <div id="chart"></div>
+  <p class="muted" style="margin:6px 0 0;font-size:12px">Times shown in {{ day_tz }}. Bars are built from stored 1m candles
+    (5m on fallback days). Dashed lines: previous day's high/low; solid: the current day's running high/low.</p>
+</div>
+<script>
+(function () {
+  const url = "{% url 'market:candles_json' coin.pk %}";
+  const el = document.getElementById('chart');
+  const status = document.getElementById('chart-status');
+  if (!window.LightweightCharts) { status.textContent = 'Chart library failed to load'; return; }
+  const css = getComputedStyle(document.documentElement);
+  const v = (n) => css.getPropertyValue(n).trim();
+  const STEPS = {'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
+  const MAX_DAYS = {{ chart_max_days_json|safe }};
+  const chart = LightweightCharts.createChart(el, {
+    autoSize: true,
+    layout: { background: { color: v('--card') }, textColor: v('--ink') },
+    grid: { vertLines: { color: v('--line') }, horzLines: { color: v('--line') } },
+    rightPriceScale: { borderColor: v('--line') },
+    timeScale: { borderColor: v('--line'), timeVisible: true, secondsVisible: false, minBarSpacing: 0.01 },
+    crosshair: { mode: 0 },
+  });
+  const candles = chart.addCandlestickSeries({ upColor:'#16a34a', downColor:'#dc2626', borderVisible:false, wickUpColor:'#16a34a', wickDownColor:'#dc2626' });
+  const volume = chart.addHistogramSeries({ priceFormat:{ type:'volume' }, priceScaleId:'vol', color:'rgba(100,116,139,.35)', lastValueVisible:false, priceLineVisible:false });
+  chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  const cvd = chart.addLineSeries({ priceScaleId: 'cvd', color: '#7c3aed', lineWidth: 1, priceLineVisible: false,
+    lastValueVisible: false, crosshairMarkerVisible: false, title: 'CVD' });
+  chart.priceScale('cvd').applyOptions({ scaleMargins: { top: 0.62, bottom: 0.2 }, visible: false });
+  const store = new Map();  // bar time -> {volume, buy, sell, up} for redrawing volume / order flow
+  function drawFlow() {
+    const flow = document.getElementById('show-flow').checked;
+    const rows = [...store.entries()].sort((a, b) => a[0] - b[0]);
+    if (!flow) {
+      volume.setData(rows.map(([t, r]) => ({ time: t, value: r.volume, color: r.up ? 'rgba(22,163,74,.35)' : 'rgba(220,38,38,.35)' })));
+      cvd.setData([]);
+      return;
+    }
+    let sum = 0;
+    const deltas = [], line = [];
+    for (const [t, r] of rows) {
+      if (r.buy == null) { deltas.push({ time: t }); continue; }
+      const d = r.buy - r.sell;
+      sum += d;
+      deltas.push({ time: t, value: d, color: d >= 0 ? 'rgba(22,163,74,.6)' : 'rgba(220,38,38,.6)' });
+      line.push({ time: t, value: sum });
+    }
+    volume.setData(deltas);
+    cvd.setData(line);
+  }
+  const line = (color, style, title) => chart.addLineSeries({ color, lineWidth: 1, lineStyle: style, lineType: 1, title,
+      priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
+  const pdh = line('#2563eb', 2, 'PDH'), pdl = line('#d97706', 2, 'PDL');
+  const dayH = line('#64748b', 0, 'Day H'), dayL = line('#64748b', 0, 'Day L');
+
+  let interval = '15m', days = null, off = 0, lastRaw = null, lastShown = null, firstShown = null, levels = new Map(), precisionSet = false;
+  try { interval = localStorage.getItem('qf-interval') || interval; } catch (e) {}
+  const shift = (t) => t + off;
+  const bucket = (t) => { const s = STEPS[interval], o = s >= 14400 ? off : 0; return Math.floor((t + o) / s) * s - o; };
+
+  function setPrecision(price) {
+    if (precisionSet || !price) return;
+    const p = Math.min(10, Math.max(2, 4 - Math.floor(Math.log10(price))));
+    const fmt = { type: 'price', precision: p, minMove: Math.pow(10, -p) };
+    [candles, pdh, pdl, dayH, dayL].forEach(s => s.applyOptions({ priceFormat: fmt }));
+    precisionSet = true;
+  }
+
+  function drawLevels() {
+    const L = [...levels.values()].sort((a, b) => a.start - b.start);
+    const seriesData = (key) => {
+      const pts = [];
+      for (const d of L) pts.push(d[key] == null ? { time: shift(d.start) } : { time: shift(d.start), value: d[key] });
+      const last = L[L.length - 1];
+      if (last && lastShown && lastShown > shift(last.start) && last[key] != null) pts.push({ time: lastShown, value: last[key] });
+      return pts;
+    };
+    const showPd = document.getElementById('show-pd').checked, showDay = document.getElementById('show-day').checked;
+    pdh.setData(showPd ? seriesData('pdh') : []); pdl.setData(showPd ? seriesData('pdl') : []);
+    dayH.setData(showDay ? seriesData('high') : []); dayL.setData(showDay ? seriesData('low') : []);
+    const marks = [];
+    if (document.getElementById('show-marks').checked) {
+      const inRange = (t) => firstShown != null && t >= firstShown && t <= lastShown;
+      for (const d of L) {
+        const h = shift(bucket(d.high_time)), l = shift(bucket(d.low_time));
+        if (inRange(h)) marks.push({ time: h, position: 'aboveBar', color: '#16a34a', shape: 'arrowDown', text: 'H' });
+        if (inRange(l)) marks.push({ time: l, position: 'belowBar', color: '#dc2626', shape: 'arrowUp', text: 'L' });
+      }
+    }
+    marks.sort((a, b) => a.time - b.time);
+    candles.setMarkers(marks);
+  }
+
+  async function load(full) {
+    const q = new URLSearchParams({ interval });
+    if (days) q.set('days', days);
+    if (!full && lastRaw != null) q.set('since', lastRaw);
+    const r = await fetch(url + '?' + q, { headers: { 'Accept': 'application/json' } });
+    if (r.status === 302 || r.redirected) { location.reload(); return; }
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.status);
+    off = data.tz_offset;
+    if (full) levels = new Map();
+    for (const d of data.levels) levels.set(d.date, d);
+    const bars = data.candles.map(c => ({ time: shift(c.time), open: c.open, high: c.high, low: c.low, close: c.close }));
+    if (full) store.clear();
+    for (const c of data.candles) store.set(shift(c.time), { volume: c.volume, buy: c.buy, sell: c.sell, up: c.close >= c.open });
+    if (full) candles.setData(bars); else bars.forEach(b => candles.update(b));
+    drawFlow();
+    if (full) firstShown = data.candles.length ? shift(data.candles[0].time) : null;
+    if (data.candles.length) {
+      const last = data.candles[data.candles.length - 1];
+      lastRaw = last.time; lastShown = shift(last.time); setPrecision(last.close);
+    }
+    drawLevels();
+    if (full) chart.timeScale().fitContent();
+    status.textContent = data.candles.length ? `${data.pair} ${interval} · last bar ${new Date(lastRaw * 1000).toISOString().slice(0, 16).replace('T', ' ')}Z` : 'No candles yet — press Sync';
+  }
+
+  function select(i, keepDays) {
+    interval = i; lastRaw = null; precisionSet = false;
+    if (!keepDays) days = null;
+    try { localStorage.setItem('qf-interval', i); } catch (e) {}
+    document.querySelectorAll('#intervals button').forEach(b => b.classList.toggle('active', b.dataset.i === i));
+    return load(true).catch(e => status.textContent = 'Chart error: ' + e.message);
+  }
+  document.querySelectorAll('#intervals button').forEach(b => b.addEventListener('click', () => select(b.dataset.i)));
+  // Zoom to one day (unix start/end). Loads enough history first, switching to a coarser
+  // interval when the current one can't reach that far back (e.g. 1m keeps 7 days).
+  let bandLines = [];
+  window.qfChart = {
+    // Draw price bands (e.g. zone hotspots) as pairs of horizontal lines.
+    setBands(bands) {
+      bandLines.forEach(l => candles.removePriceLine(l)); bandLines = [];
+      for (const b of bands) {
+        for (const [p, edge] of [[b.upper, 'top'], [b.lower, 'bottom']]) {
+          bandLines.push(candles.createPriceLine({ price: p, color: b.color, lineWidth: 1, lineStyle: 1,
+            axisLabelVisible: edge === 'top', title: edge === 'top' ? b.title : '' }));
+        }
+      }
+    },
+    focusDay(dayStart, dayEnd) {
+      const need = Math.ceil((Date.now() / 1000 - dayStart) / 86400) + 1;
+      let i = interval;
+      if ((MAX_DAYS[i] || 0) < need || i === '1d') i = need <= MAX_DAYS['15m'] ? '15m' : '1h';
+      days = Math.min(MAX_DAYS[i], Math.max(need, days || 0));
+      const pad = STEPS[i] * 8;
+      return select(i, true).then(() => {
+        chart.timeScale().setVisibleRange({ from: shift(dayStart - pad), to: shift(dayEnd + pad) });
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    },
+  };
+  ['show-pd', 'show-day', 'show-marks'].forEach(id => document.getElementById(id).addEventListener('change', drawLevels));
+  document.getElementById('show-flow').addEventListener('change', drawFlow);
+  select(STEPS[interval] ? interval : '15m');
+  setInterval(() => { if (!document.hidden) load(false).catch(e => status.textContent = 'Live update failed: ' + e.message); }, 5000);
+})();
+</script>

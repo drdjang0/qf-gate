@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}{{ config.name }} · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <h2 style="margin:0">{{ config.name }}</h2>
+    <span class="muted">{{ strategy.name }} · <a href="{% url 'market:coin_detail' config.coin_id %}" class="mono">{{ config.coin.pair }}</a> · {{ config.interval }}</span>
+    <span style="margin-left:auto"></span>
+    <a class="btn" href="{% url 'trading:strategy_edit' config.pk %}">Edit</a>
+    <form class="inline" method="post" action="{% url 'trading:strategy_delete' config.pk %}" onsubmit="return confirm('Delete this strategy with all its backtests and paper sessions? This cannot be undone.')">{% csrf_token %}<button class="btn danger">Delete</button></form>
+  </div>
+  <p class="muted" style="margin-bottom:0">{{ strategy.description }}</p>
+</div>
+
+<div class="card grid">
+  {% for k, v in params.items %}<div class="stat"><span class="muted">{{ k }}</span><b class="mono" style="font-size:14px">{{ v }}</b></div>{% endfor %}
+  {% for k, v in risk.items %}<div class="stat"><span class="muted">{{ k }}</span><b class="mono" style="font-size:14px">{{ v }}</b></div>{% endfor %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Backtest</h3>
+  <form method="post" action="{% url 'trading:backtest_create' config.pk %}" style="display:flex;flex-wrap:wrap;gap:12px;align-items:end">
+    {% csrf_token %}
+    <label>From {{ bt_form.start }}</label>
+    <label>To {{ bt_form.end }}</label>
+    <button class="btn primary">Run backtest</button>
+  </form>
+  <p class="muted" style="font-size:12px">Uses the candles already stored for {{ config.coin.pair }} (sync more days on the coin page for longer tests).
+    The 2 days before the start only warm up the day levels.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>#</th><th>Period</th><th>Status</th><th>Return</th><th>Buy &amp; hold</th><th>Trades</th><th>Win</th><th>PF</th><th>Max DD</th></tr></thead>
+    <tbody>
+    {% for b in backtests %}
+      <tr>
+        <td><a href="{% url 'trading:backtest_detail' b.pk %}">#{{ b.pk }}</a></td>
+        <td class="mono">{{ b.start|date:"Y-m-d" }} → {{ b.end|date:"Y-m-d" }}</td>
+        <td><span class="badge {% if b.status == 'done' %}ok{% elif b.status == 'failed' %}err{% else %}warn{% endif %}">{{ b.get_status_display }}</span></td>
+        {% if b.status == 'done' %}
+        <td class="num {% if b.metrics.return_pct >= 0 %}ok{% else %}err{% endif %}">{{ b.metrics.return_pct|floatformat:2 }}%</td>
+        <td class="num muted">{{ b.metrics.buy_hold_pct|floatformat:2 }}%</td>
+        <td class="num">{{ b.metrics.trades }}</td>
+        <td class="num">{% if b.metrics.win_rate_pct is not None %}{{ b.metrics.win_rate_pct|floatformat:0 }}%{% else %}—{% endif %}</td>
+        <td class="num">{{ b.metrics.profit_factor|floatformat:2|default:"—" }}</td>
+        <td class="num">{{ b.metrics.max_drawdown_pct|floatformat:2 }}%</td>
+        {% else %}<td colspan="6" class="muted">{{ b.message|truncatechars:80 }}</td>{% endif %}
+      </tr>
+    {% empty %}<tr><td colspan="9" class="muted">No backtests yet.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Portfolio backtest <span class="muted" style="font-size:13px">this strategy on several coins, one shared balance</span></h3>
+  <form method="post" action="{% url 'trading:portfolio_create' config.pk %}" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">{% csrf_token %}
+    <p><label>Coins</label><span style="display:flex;flex-wrap:wrap;gap:8px">{% for c in all_coins %}<label style="font-weight:400"><input type="checkbox" name="coins" value="{{ c.pk }}"{% if c.pk == config.coin_id %} checked{% endif %}> {{ c.pair }}</label>{% endfor %}</span></p>
+    <p>{{ bt_form.start.label_tag }} {{ bt_form.start }}</p>
+    <p>{{ bt_form.end.label_tag }} {{ bt_form.end }}</p>
+    <p><label>Max open trades</label><input type="number" name="max_open" value="3" min="1" max="50" style="width:80px"></p>
+    <p><button class="btn primary">Run portfolio backtest</button></p>
+  </form>
+  {% if portfolios %}<div class="scroll"><table>
+    <thead><tr><th>#</th><th>Coins</th><th>Period</th><th>Status</th><th class="num">Return</th><th class="num">Trades</th></tr></thead>
+    <tbody>{% for p in portfolios %}<tr><td><a href="{% url 'trading:portfolio_detail' p.pk %}">#{{ p.pk }}</a></td>
+      <td>{{ p.coins.count }}</td><td class="mono">{{ p.start|date:"Y-m-d" }} → {{ p.end|date:"Y-m-d" }}</td><td>{{ p.get_status_display }}</td>
+      <td class="num">{% if p.metrics.return_pct is not None %}{{ p.metrics.return_pct|floatformat:2 }}%{% else %}—{% endif %}</td>
+      <td class="num">{{ p.metrics.trades|default:"—" }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</div>
+
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px">
+    <h3 style="margin:0">Strategy checks</h3>
+    <form class="inline" style="margin-left:auto" method="post" action="{% url 'trading:strategy_check' config.pk %}">{% csrf_token %}
+      <button class="btn">Run checks</button></form>
+  </div>
+  <p class="muted" style="font-size:12px">Look-ahead: the strategy may not query the database while deciding, and replaying it with the
+    future cut off must give the same signals. Warm-up: signals must not change when more history is loaded than the strategy asks for.
+    Uses the last 30 days of stored data.</p>
+  {% with c=config.last_check %}{% if c %}
+  <div class="grid">
+    <div class="stat"><span class="muted">Look-ahead</span>
+      <b class="{% if c.lookahead.ok %}ok{% else %}err{% endif %}">{% if c.lookahead.ok %}none found{% else %}PROBLEM{% endif %}</b>
+      <span class="muted">{{ c.lookahead.signals }} signals, {{ c.lookahead.checked }} cut points</span></div>
+    <div class="stat"><span class="muted">Warm-up ({{ c.warmup.declared }} days declared)</span>
+      <b class="{% if c.warmup.ok %}ok{% elif c.warmup.ok is None %}warn{% else %}err{% endif %}">{% if c.warmup.ok %}enough{% elif c.warmup.ok is None %}not enough data{% else %}TOO SHORT{% endif %}</b>
+      <span class="muted">{% for r in c.warmup.rows %}{{ r.days }}d: {{ r.differ }} differ{% if not forloop.last %} · {% endif %}{% endfor %}</span></div>
+    <div class="stat"><span class="muted">Checked</span><b class="mono">{{ config.last_check_at|date:"Y-m-d H:i" }}</b><span class="muted">{{ c.bars }} bars</span></div>
+  </div>
+  {% if c.lookahead.db_queries %}<p class="err">Database queries inside on_bar (could read future data): <span class="mono">{{ c.lookahead.db_queries|join:" | " }}</span></p>{% endif %}
+  {% if c.lookahead.mismatches %}<p class="err">Signals that changed when the future was cut off: {{ c.lookahead.mismatches|length }}.</p>{% endif %}
+  {% if c.warmup.message %}<p class="warn">{{ c.warmup.message }}</p>{% endif %}
+  {% else %}<p class="muted" style="margin-bottom:0">Not checked yet.</p>{% endif %}{% endwith %}
+</div>
+
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px">
+    <h3 style="margin:0">Parameter sweeps</h3>
+    <a class="btn" style="margin-left:auto" href="{% url 'trading:sweep_create' config.pk %}">New sweep</a>
+  </div>
+  <p class="muted" style="font-size:12px">Try many settings at once, ranked in-sample and checked out-of-sample.</p>
+  {% if sweeps %}
+  <div class="scroll"><table>
+    <thead><tr><th>#</th><th>Period</th><th>Combinations</th><th>Status</th><th>Best in-sample</th><th>Its out-of-sample</th></tr></thead>
+    <tbody>{% for s in sweeps %}{% with best=s.results.0 %}
+      <tr><td><a href="{% url 'trading:sweep_detail' s.pk %}">#{{ s.pk }}</a></td>
+        <td class="mono">{{ s.start|date:"Y-m-d" }} → {{ s.end|date:"Y-m-d" }}</td>
+        <td class="num">{{ s.total }}</td>
+        <td><span class="badge {% if s.status == 'done' %}ok{% elif s.status == 'failed' %}err{% else %}warn{% endif %}">{{ s.get_status_display }}</span></td>
+        <td class="num">{% if best %}{{ best.is.return_pct|floatformat:2 }}%{% else %}—{% endif %}</td>
+        <td class="num">{% if best.oos %}{{ best.oos.return_pct|floatformat:2 }}%{% else %}—{% endif %}</td></tr>
+    {% endwith %}{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+    <h3 style="margin:0">Bots</h3>
+    <span class="muted">dry-run: decisions on live bars, fills simulated on Gate.io's live order book, nothing is sent</span>
+    <span style="margin-left:auto"></span>
+    {% if "dry_run" in running_bots %}<span class="badge ok">dry-run bot running</span>{% else %}
+    <form class="inline" method="post" action="{% url 'trading:bot_start' config.pk %}">{% csrf_token %}<input type="hidden" name="mode" value="dry_run">
+      <button class="btn primary">Start dry-run bot</button></form>{% endif %}
+    {% if "live" not in running_bots %}
+    <form class="inline" method="post" action="{% url 'trading:bot_start' config.pk %}" onsubmit="return confirm('Start a LIVE bot that sends real orders to Gate.io?')">{% csrf_token %}
+      <input type="hidden" name="mode" value="live"><button class="btn danger" {% if not promotion.ok %}disabled title="See the checklist below"{% endif %}>Start live bot</button></form>{% endif %}
+  </div>
+  <details style="margin-top:8px"{% if not promotion.ok %}{% endif %}><summary class="muted">Live checklist: {% if promotion.ok %}<span class="ok">ready</span>{% else %}{{ promotion.items|length }} conditions, not all met{% endif %}</summary>
+    <ul style="margin:6px 0">{% for i in promotion.items %}<li class="{% if i.ok %}ok{% else %}err{% endif %}">{% if i.ok %}✓{% else %}✗{% endif %} {{ i.text }}</li>{% endfor %}</ul></details>
+  {% if bots %}<div class="scroll"><table>
+    <thead><tr><th>#</th><th>Mode</th><th>Status</th><th>Started</th><th>Position</th><th class="num">Cash</th></tr></thead>
+    <tbody>{% for b in bots %}<tr><td><a href="{% url 'trading:bot_detail' b.pk %}">#{{ b.pk }}</a></td>
+      <td><span class="badge {% if b.mode == 'live' %}err{% else %}warn{% endif %}">{% if b.mode == 'live' %}LIVE{% else %}dry-run{% endif %}</span></td>
+      <td>{{ b.get_status_display }}</td><td class="mono">{{ b.started_at|date:"Y-m-d H:i" }}</td>
+      <td>{% if b.pos %}long {{ b.pos.qty|floatformat:6 }}{% else %}<span class="muted">flat</span>{% endif %}</td>
+      <td class="num">{{ b.state.cash|floatformat:2 }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Paper trading</h3>
+  {% if running %}
+    <p>Running since {{ running.started_at|date:"Y-m-d H:i" }} UTC — <a href="{% url 'trading:paper_detail' running.pk %}">open session</a></p>
+  {% else %}
+    <form method="post" action="{% url 'trading:paper_start' config.pk %}">{% csrf_token %}<button class="btn primary">Start paper trading</button></form>
+    <p class="muted" style="font-size:12px">Simulated fills only; no orders are sent to Gate.io. Needs <span class="mono">stream_candles</span> (instant) or <span class="mono">run_worker</span> (each minute) running.</p>
+  {% endif %}
+  {% if sessions %}
+  <div class="scroll"><table>
+    <thead><tr><th>#</th><th>Started (UTC)</th><th>Status</th><th>Equity</th></tr></thead>
+    <tbody>{% for p in sessions %}
+      <tr><td><a href="{% url 'trading:paper_detail' p.pk %}">#{{ p.pk }}</a></td><td class="mono">{{ p.started_at|date:"Y-m-d H:i" }}</td>
+        <td><span class="badge {% if p.status == 'running' %}ok{% elif p.status == 'error' %}err{% else %}muted{% endif %}">{{ p.get_status_display }}</span></td>
+        <td class="num">{{ p.equity|floatformat:2|default:"—" }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+</div>
+{% endblock %}

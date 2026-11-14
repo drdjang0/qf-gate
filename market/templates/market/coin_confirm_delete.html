@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Delete {{ object.symbol }} · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Delete {{ object }}?</h2>
+  <p>This permanently removes the coin <b>and all of its stored candles and daily levels</b>.
+    To stop syncing but keep the data, edit the coin and untick <i>Is active</i> instead.</p>
+  <form method="post">
+    {% csrf_token %}
+    <button class="btn danger" type="submit">Delete permanently</button>
+    <a class="btn" href="{% url 'market:coin_detail' object.pk %}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

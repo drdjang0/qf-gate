@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% load market_extras %}
+{% block title %}{{ coin.pair }} vs Binance · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <h2 style="margin:0">{{ coin.pair }} · Gate.io vs Binance <span class="muted" style="font-size:14px">read-only</span></h2>
+    <form method="get" style="margin-left:auto;display:flex;gap:6px;align-items:center"><label class="muted" style="display:inline;font-weight:400">Days</label>
+      <input type="number" name="days" value="{{ days }}" min="7" max="365" style="width:80px"><button class="btn">Apply</button></form>
+    <a class="btn" href="{% url 'market:coin_detail' coin.pk %}">Coin page</a>
+  </div>
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  {% if r %}
+    {% if not r.listed %}<p class="warn" style="margin-bottom:0">Binance does not list {{ r.symbol }}.</p>
+    {% else %}
+    <p style="margin-bottom:0">Matched as <b class="mono">{{ r.symbol }}</b> on Binance by ticker (Binance has no contract addresses).
+      Median daily close difference: <b>{{ r.median_diff_pct|floatformat:3 }}%</b> —
+      {% if r.same_asset %}<span class="ok">prices agree, same asset</span>{% else %}<span class="err">more than {{ max_diff }}%: probably a DIFFERENT token with the same ticker; don't use this comparison</span>{% endif %}
+      {% if r.volume_share_pct is not None %}· Gate.io's share of the combined volume: <b>{{ r.volume_share_pct|floatformat:1 }}%</b>{% endif %}</p>
+    {% endif %}
+  {% endif %}
+</div>
+{% if r.rows %}
+<div class="card scroll">
+  <table>
+    <thead><tr><th>Date (UTC)</th><th class="num">Gate close</th><th class="num">Binance close</th><th class="num">Difference</th>
+      <th class="num">Gate volume</th><th class="num">Binance volume</th><th class="num" title="Binance taker buy minus sell volume, % of the day's volume">Binance delta</th><th></th></tr></thead>
+    <tbody>{% for x in r.rows %}
+      <tr><td class="mono">{{ x.date|date:"D Y-m-d" }}</td><td class="num mono">{{ x.gate_close|fprice }}</td><td class="num mono">{{ x.other_close|fprice }}</td>
+        <td class="num {% if x.diff_pct > 0.2 or x.diff_pct < -0.2 %}warn{% endif %}">{% if x.diff_pct > 0 %}+{% endif %}{{ x.diff_pct|floatformat:3 }}%</td>
+        <td class="num">{{ x.gate_volume|floatformat:0 }}</td><td class="num">{{ x.other_volume|floatformat:0 }}</td>
+        <td class="num {% if x.other_delta_pct > 0 %}ok{% elif x.other_delta_pct < 0 %}err{% endif %}">{{ x.other_delta_pct|floatformat:1 }}%</td>
+        <td>{% if not x.complete %}<span class="badge warn">live</span>{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Both exchanges' daily candles are UTC days. Volumes are in {{ coin.quote }}. Cached for 10 minutes.</p>
+</div>
+{% endif %}
+{% endblock %}

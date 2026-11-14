@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{% if object %}Edit {{ object.name }}{% else %}New {{ strategy.name }}{% endif %} · QF-gate{% endblock %}
+{% block content %}
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="strategy" value="{{ strategy.key }}">
+  <div class="card">
+    <h2 style="margin-top:0">{% if object %}Edit {{ object.name }}{% else %}New: {{ strategy.name }}{% endif %}</h2>
+    <p class="muted">{{ strategy.description }}</p>
+    {{ form.non_field_errors }}
+    {% for f in form.basic_fields %}<p>{{ f.label_tag }} {{ f }} {% if f.help_text %}<span class="helptext">{{ f.help_text }}</span>{% endif %}{{ f.errors }}</p>{% endfor %}
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Strategy parameters</h3>
+    {% for f in form.param_fields %}<p>{{ f.label_tag }} {{ f }} <span class="helptext">{{ f.help_text }}</span>{{ f.errors }}</p>{% endfor %}
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Risk &amp; costs</h3>
+    {% for f in form.risk_fields %}<p>{{ f.label_tag }} {{ f }} <span class="helptext">{{ f.help_text }}</span>{{ f.errors }}</p>{% endfor %}
+    <button class="btn primary" type="submit">Save</button>
+    <a class="btn" href="{% if object %}{% url 'trading:strategy_detail' object.pk %}{% else %}{% url 'trading:strategy_list' %}{% endif %}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

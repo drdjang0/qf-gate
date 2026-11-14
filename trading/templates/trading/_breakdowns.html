@@ -1,0 +1,27 @@
+{% load market_extras %}
+{# Result breakdowns by period / exit reason / entry type. Needs: breakdowns, groups, export_url #}
+<div class="card scroll">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h3 style="margin:0">Breakdown</h3>
+    <div class="seg" id="bd-tabs">{% for key, label in groups %}<button type="button" data-g="{{ key }}"{% if forloop.first %} class="active"{% endif %}>{{ label }}</button>{% endfor %}</div>
+    <a class="btn" style="margin-left:auto" href="{{ export_url }}">Export Excel</a>
+  </div>
+  {% for key, label in groups %}{% with rows=breakdowns|get_item:key %}
+  <table class="bd" data-g="{{ key }}" style="margin-top:8px{% if not forloop.first %};display:none{% endif %}">
+    <thead><tr><th>{{ label }}</th><th class="num">Trades</th><th class="num">Win %</th><th class="num">PnL</th>
+      <th class="num">Return</th><th class="num">Avg R</th><th class="num">Fees</th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr><td class="mono">{{ r.key }}</td><td class="num">{{ r.trades }}</td><td class="num">{{ r.win_pct|floatformat:0 }}%</td>
+        <td class="num {% if r.pnl >= 0 %}ok{% else %}err{% endif %}">{{ r.pnl|floatformat:2 }}</td>
+        <td class="num">{{ r.ret_pct|floatformat:2 }}%</td><td class="num">{{ r.avg_r|floatformat:2 }}</td>
+        <td class="num muted">{{ r.fees|floatformat:2 }}</td></tr>
+    {% empty %}<tr><td colspan="7" class="muted">No closed trades.</td></tr>{% endfor %}</tbody>
+  </table>{% endwith %}{% endfor %}
+  <p class="muted" style="font-size:12px;margin-bottom:0">Trades count in the period they closed. Return = PnL as % of the starting cash.</p>
+</div>
+<script>
+document.querySelectorAll('#bd-tabs button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#bd-tabs button').forEach(x => x.classList.toggle('active', x === b));
+  document.querySelectorAll('table.bd').forEach(t => { t.style.display = t.dataset.g === b.dataset.g ? '' : 'none'; });
+}));
+</script>

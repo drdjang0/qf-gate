@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}New strategy · QF-gate{% endblock %}
+{% block content %}
+<div class="card"><h2 style="margin:0">Choose a strategy</h2></div>
+{% for s in strategies %}
+<div class="card">
+  <h3 style="margin-top:0">{{ s.name }}</h3>
+  <p>{{ s.description }}</p>
+  <a class="btn primary" href="?strategy={{ s.key }}">Use this</a>
+</div>
+{% endfor %}
+{% endblock %}

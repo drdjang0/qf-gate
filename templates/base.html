@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}QF-gate{% endblock %}</title>
+  {% block head %}{% endblock %}
+  <style>
+    :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#667085; --line:#e4e7ec;
+            --accent:#2563eb; --ok:#067647; --warn:#b54708; --err:#b42318; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0f1117; --card:#171a22; --ink:#e6e8ee; --muted:#98a2b3; --line:#2a2f3a;
+              --accent:#60a5fa; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font:14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+    header { background:var(--card); border-bottom:1px solid var(--line); padding:10px 16px; display:flex; gap:16px; align-items:center; }
+    header a.brand { font-weight:700; color:var(--ink); text-decoration:none; }
+    header nav { margin-left:auto; display:flex; gap:12px; align-items:center; }
+    main { max-width:1200px; margin:0 auto; padding:16px; }
+    a { color:var(--accent); }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:16px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+    th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+    td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    .scroll { overflow-x:auto; }
+    .btn { display:inline-block; padding:6px 12px; border-radius:6px; border:1px solid var(--line); background:var(--card);
+           color:var(--ink); cursor:pointer; text-decoration:none; font:inherit; }
+    .btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .btn.danger { color:var(--err); border-color:var(--err); }
+    .btn[disabled] { opacity:.5; cursor:not-allowed; }
+    .inline { display:inline; }
+    .muted { color:var(--muted); }
+    .mono { font-family: ui-monospace, Consolas, monospace; font-size:12px; }
+    .badge { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; border:1px solid currentColor; }
+    .ok { color:var(--ok); } .warn { color:var(--warn); } .err { color:var(--err); }
+    .messages { list-style:none; padding:0; margin:0 0 16px; }
+    .messages li { padding:8px 12px; border-radius:6px; margin-bottom:6px; background:var(--card); border:1px solid var(--line); }
+    .messages .success { border-color:var(--ok); } .messages .warning { border-color:var(--warn); } .messages .error { border-color:var(--err); }
+    form p { margin:0 0 12px; } form label { display:block; font-weight:600; margin-bottom:2px; }
+    input[type=text], input[type=password], input[type=number], textarea, select {
+      width:100%; max-width:520px; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink); font:inherit; }
+    .helptext { display:block; color:var(--muted); font-size:12px; }
+    .errorlist { color:var(--err); padding-left:16px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; }
+    .stat b { display:block; font-size:18px; }
+    .svc { font-size:12px; color:var(--muted); display:inline-flex; align-items:center; gap:4px; }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--err); display:inline-block; }
+    .dot.on { background:var(--ok); }
+    .seg { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+    .seg button { border:0; border-right:1px solid var(--line); background:var(--card); color:var(--ink); padding:4px 10px; cursor:pointer; font:inherit; }
+    .seg button:last-child { border-right:0; }
+    .seg button.active { background:var(--accent); color:#fff; }
+    #chart { height:460px; width:100%; }
+    @media (max-width: 640px) { #chart { height:320px; } header { flex-wrap:wrap; } }
+  </style>
+</head>
+<body>
+<header>
+  <a class="brand" href="{% url 'market:coin_list' %}">QF-gate</a>
+  {% if user.is_authenticated %}
+  <span class="svc" title="Background worker (run_worker)"><i class="dot {% if svc_worker_ok %}on{% endif %}"></i>worker{% if svc_queue %} · {{ svc_queue }} queued{% endif %}</span>
+  <span class="svc" title="Live 1m stream (stream_candles)"><i class="dot {% if svc_stream_ok %}on{% endif %}"></i>live</span>
+  <nav>
+    <a href="{% url 'market:market_page_default' %}">Market</a>
+    <a href="{% url 'market:coin_list' %}">Coins</a>
+    <a href="{% url 'market:screener' %}">Screener</a>
+    <a href="{% url 'trading:strategy_list' %}">Strategies</a>
+    <a href="{% url 'trading:control' %}">Bots</a>
+    <a href="{% url 'market:job_list' %}">Jobs</a>
+    <a href="{% url 'market:export_levels' %}">Export all</a>
+    <a href="{% url 'admin:index' %}">Admin</a>
+    <form class="inline" method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn">Log out</button></form>
+  </nav>
+  {% endif %}
+</header>
+<main{% block main_attrs %}{% endblock %}>
+  {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

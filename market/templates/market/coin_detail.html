@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load tz market_extras %}
+{% block title %}{{ coin.symbol }} · QF-gate{% endblock %}
+{% block head %}<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <h2 style="margin:0">{{ coin.symbol }} <span class="muted">{{ coin.name }}</span></h2>
+    <span class="mono">{{ coin.pair }}</span>
+    <span style="margin-left:auto"></span>
+    <form class="inline" method="post" action="{% url 'market:coin_verify' coin.pk %}">{% csrf_token %}<button class="btn">Verify</button></form>
+    <form class="inline" method="post" action="{% url 'market:coin_sync' coin.pk %}">{% csrf_token %}
+      <input type="number" name="days" value="60" min="1" max="365" style="width:80px" aria-label="Days of history">
+      <button class="btn primary" {% if active_job %}disabled title="{{ active_job.get_kind_display }} is {{ active_job.status }}"{% endif %}>Sync</button>
+    </form>
+    <a class="btn" href="{% url 'market:market_page' coin.pk %}">Market view</a>
+    <a class="btn" href="{% url 'market:compare_page' coin.pk %}">Compare exchanges</a>
+    <a class="btn" href="{% url 'market:export_levels' %}?coin={{ coin.pk }}">Export Excel</a>
+    <a class="btn" href="{% url 'market:coin_update' coin.pk %}">Edit</a>
+  </div>
+  <p class="muted" style="margin-bottom:0">
+    Chain <b>{{ coin.chain }}</b> ·
+    {% if coin.contract_address %}contract <span class="mono">{{ coin.contract_address }}</span>{% else %}native coin{% endif %} ·
+    {% if coin.verified_at %}<span class="ok">verified {{ coin.verified_at|date:"Y-m-d H:i" }}</span>{% else %}<span class="err">not verified</span>{% endif %}
+    {% if coin.verification_note %}— {{ coin.verification_note }}{% endif %}
+  </p>
+  {% if active_job %}<p class="warn" style="margin-bottom:0">{{ active_job.get_kind_display }} {{ active_job.status }} since {{ active_job.created_at|date:"H:i:s" }} UTC — <a href="{% url 'market:job_list' %}?coin={{ coin.pk }}">jobs</a></p>{% endif %}
+</div>
+
+{% include "market/_live_chart.html" %}
+
+<div class="card grid">
+  <div class="stat"><span class="muted">Sync</span><b class="{% if coin.sync_status == 'ok' %}ok{% elif coin.sync_status == 'error' %}err{% elif coin.sync_status == 'running' %}warn{% endif %}">{{ coin.get_sync_status_display }}</b></div>
+  <div class="stat"><span class="muted">Last 1m candle (UTC)</span><b class="mono">{{ last_candle.open_time|date:"Y-m-d H:i"|default:"—" }}</b></div>
+  <div class="stat"><span class="muted">Data age</span><b>{% if lag_seconds is not None %}{{ lag_seconds|floatformat:0 }} s{% else %}—{% endif %}</b></div>
+  {% for k, v in candle_counts.items %}<div class="stat"><span class="muted">{{ k }} candles</span><b>{{ v }}</b></div>{% endfor %}
+</div>
+<div class="card">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <h3 style="margin:0">Data quality</h3>
+    <span class="muted">{{ gaps.days|length }} days stored (UTC)</span>
+    {% if gaps.summary %}<span class="badge ok">{{ gaps.summary.complete }} complete 1m</span>
+    {% if gaps.summary.fallback %}<span class="badge warn">{{ gaps.summary.fallback }} on 5m fallback</span>{% endif %}
+    {% if gaps.summary.partial %}<span class="badge err">{{ gaps.summary.partial }} partial</span>{% endif %}
+    {% if gaps.summary.missing %}<span class="badge err">{{ gaps.summary.missing }} missing</span>{% endif %}{% endif %}
+    {% if gaps.first_gap %}<form class="inline" style="margin-left:auto" method="post" action="{% url 'market:coin_repair' coin.pk %}">{% csrf_token %}
+      <button class="btn primary" title="Queue a sync back to {{ gaps.first_gap|date:'Y-m-d' }}">Repair gaps</button></form>{% endif %}
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:10px">{% for d in gaps.days %}<span title="{{ d.date|date:'Y-m-d' }}: {{ d.m1 }} of {{ d.expected }} 1m candles{% if d.m5 %}, {{ d.m5 }} 5m{% endif %} ({{ d.status }})"
+    style="width:9px;height:14px;border-radius:2px;background:{% if d.status == 'complete' %}#16a34a{% elif d.status == 'fallback' %}#d97706{% elif d.status == 'partial' %}#dc2626{% else %}#7f1d1d{% endif %}"></span>{% endfor %}</div>
+  {% if gaps.problems %}<details style="margin-top:8px"><summary class="muted">{{ gaps.problems|length }} day{{ gaps.problems|length|pluralize }} not fully covered by 1m candles</summary>
+    <table style="width:auto;margin-top:6px"><thead><tr><th>Day</th><th class="num">1m</th><th class="num">5m</th><th class="num">1m coverage</th><th>Status</th></tr></thead>
+    <tbody>{% for d in gaps.problems %}<tr><td class="mono">{{ d.date|date:"Y-m-d" }}</td><td class="num">{{ d.m1 }}</td><td class="num">{{ d.m5 }}</td>
+      <td class="num">{{ d.pct|floatformat:1 }}%</td><td>{{ d.status }}</td></tr>{% endfor %}</tbody></table></details>{% endif %}
+  <p class="muted" style="font-size:12px;margin-bottom:0">Green: all 1m candles. Amber: covered by 5m candles (the current month before Gate publishes its
+    trade archive; upgraded to 1m automatically later). Red: partial or missing; use Repair.</p>
+</div>
+{% if coin.sync_message %}<div class="card mono muted" style="white-space:pre-wrap">{{ coin.sync_message }}</div>{% endif %}
+
+<div class="card scroll">
+  <h3 style="margin-top:0">Daily high / low <span class="muted">(day boundary and times: {{ day_tz }})</span></h3>
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Day high</th><th>High time</th><th>Day low</th><th>Low time</th>
+      <th>PDH</th><th>PDL</th><th>Precision</th><th>Status</th>
+    </tr></thead>
+    <tbody>
+    {% timezone day_tz %}
+    {% for r in rows %}
+      <tr>
+        <td class="mono">{{ r.level.date|date:"Y-m-d" }}</td>
+        <td class="num">{{ r.level.high|price }}</td>
+        <td class="mono">{{ r.level.high_time|date:"H:i" }}</td>
+        <td class="num">{{ r.level.low|price }}</td>
+        <td class="mono">{{ r.level.low_time|date:"H:i" }}</td>
+        <td class="num muted">{{ r.pdh|price }}</td>
+        <td class="num muted">{{ r.pdl|price }}</td>
+        <td><span class="badge {% if r.level.time_precision == '1m' %}ok{% else %}warn{% endif %}">{{ r.level.time_precision }}</span></td>
+        <td>{% if r.level.cross_check %}<span class="err" title="{{ r.level.cross_check }}">mismatch</span>
+            {% elif r.level.is_complete %}<span class="ok">final</span>{% else %}<span class="warn">live</span>{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="9" class="muted">No data yet. Press Sync.</td></tr>
+    {% endfor %}
+    {% endtimezone %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

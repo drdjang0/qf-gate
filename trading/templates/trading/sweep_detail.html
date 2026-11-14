@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Sweep #{{ sw.pk }} · QF-gate{% endblock %}
+{% block head %}{% if sw.status == "queued" or sw.status == "running" %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin:0">Sweep #{{ sw.pk }} · <a href="{% url 'trading:strategy_detail' sw.config_id %}">{{ sw.config.name }}</a></h2>
+  <p class="muted" style="margin-bottom:0">{{ sw.strategy_key }} · <span class="mono">{{ sw.config.coin.pair }}</span> · {{ sw.interval }} ·
+    {{ sw.start|date:"Y-m-d" }} → {{ sw.end|date:"Y-m-d" }}
+    {% if sw.split %}· in-sample until {{ sw.split|date:"Y-m-d H:i" }}, out-of-sample after ({{ sw.oos_pct }}%){% else %}· no out-of-sample check{% endif %}
+    · ranked by {{ sw.get_rank_by_display }} (min {{ sw.min_trades }} trades)
+    · {% if sw.method == "smart" %}smart search, {{ sw.budget }} runs{% else %}full grid{% endif %}{% if sw.wf_folds %} · {{ sw.wf_folds }} walk-forward folds{% endif %} ·
+    <span class="badge {% if sw.status == 'done' %}ok{% elif sw.status == 'failed' %}err{% else %}warn{% endif %}">{{ sw.get_status_display }}</span></p>
+  <p class="mono muted" style="margin-bottom:0">{% for k, v in grid %}{{ k }} = {{ v|join:", " }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+  {% if sw.status == "running" or sw.status == "queued" %}
+    <p>{{ sw.done }} / {{ sw.total }} combinations ({{ sw.progress_pct }}%)</p>
+    <div style="height:6px;background:var(--line);border-radius:3px"><div style="height:6px;width:{{ sw.progress_pct }}%;background:var(--accent);border-radius:3px"></div></div>
+  {% endif %}
+  {% if sw.message %}<p class="err">{{ sw.message }}</p>{% endif %}
+</div>
+
+{% if summary %}
+<div class="card">
+  <h3 style="margin-top:0">Does it hold up on unseen data?</h3>
+  <p style="margin-bottom:0">The best in-sample combination made <b class="{% if summary.best_is >= 0 %}ok{% else %}err{% endif %}">{{ summary.best_is|floatformat:2 }}%</b>
+    and then <b class="{% if summary.best_oos >= 0 %}ok{% else %}err{% endif %}">{{ summary.best_oos|floatformat:2 }}%</b> out-of-sample.
+    Of the top {{ summary.top_n }}, <b>{{ summary.oos_positive }}</b> {% if summary.oos_positive == 1 %}was{% else %}were{% endif %} profitable out-of-sample (median {{ summary.oos_median|floatformat:2 }}%).</p>
+  <p class="muted" style="font-size:12px;margin-bottom:0">If the top combinations fall apart out-of-sample, the in-sample ranking is mostly luck (curve-fitting).
+    Look for a broad region of good results in the heatmap rather than a single best cell.</p>
+</div>
+{% endif %}
+
+{% if wf %}
+<div class="card scroll">
+  <h3 style="margin-top:0">Walk-forward · picked on the past, tested on the next window</h3>
+  <p style="margin-top:0">Compounded return over the test windows: <b class="{% if wf.oos_return_pct >= 0 %}ok{% else %}err{% endif %}">{{ wf.oos_return_pct|floatformat:2 }}%</b>
+    · <b>{{ wf.positive_folds }}</b> of {{ wf.tested_folds }} test windows profitable
+    · {% if wf.same_settings %}the same settings won every fold (stable){% else %}the winning settings changed between folds{% endif %}</p>
+  <table>
+    <thead><tr><th>Fold</th><th>Train (picked on)</th><th>Test (unseen)</th>{% for k in varied %}<th>{{ k }}</th>{% endfor %}
+      <th class="num">Train return</th><th class="num">Train trades</th><th class="num">Test return</th><th class="num">Test trades</th></tr></thead>
+    <tbody>{% for f in wf_rows %}
+      <tr{% if not f.enough_trades %} class="muted"{% endif %}><td>{{ f.fold }}</td>
+        <td class="mono">{{ f.train.0|slice:":10" }} → {{ f.train.1|slice:":10" }}</td>
+        <td class="mono">{{ f.test.0|slice:":10" }} → {{ f.test.1|slice:":10" }}</td>
+        {% for k, v in f.varied %}<td class="mono">{{ v }}</td>{% endfor %}
+        <td class="num">{{ f.train_metrics.return_pct|floatformat:2 }}%</td><td class="num">{{ f.train_metrics.trades }}</td>
+        {% if f.test_metrics %}<td class="num {% if f.test_metrics.return_pct >= 0 %}ok{% else %}err{% endif %}">{{ f.test_metrics.return_pct|floatformat:2 }}%</td>
+        <td class="num">{{ f.test_metrics.trades }}</td>{% else %}<td colspan="2" class="muted">—</td>{% endif %}</tr>
+    {% endfor %}</tbody>
+  </table>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Each fold ranks the settings on everything before its test window only, then trades them on the
+    window after. A strategy worth trading keeps winning in most test windows, ideally with the same settings.</p>
+</div>
+{% endif %}
+
+{% if heatmap %}
+<div class="card scroll">
+  <h3 style="margin-top:0">Heatmap · in-sample return % <span class="muted">(out-of-sample below)</span></h3>
+  <table style="width:auto">
+    <thead><tr><th>{{ heatmap.y_label }} ↓ / {{ heatmap.x_label }} →</th>{% for x in heatmap.xs %}<th class="num">{{ x }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for row in heatmap.rows %}
+      <tr><th class="mono">{{ row.y }}</th>
+      {% for c in row.cells %}
+        {% if c %}<td class="num" style="background:{{ c.bg }}" title="{{ c.trades }} trades">{{ c.is|floatformat:1 }}<br><span class="muted" style="font-size:11px">{% if c.oos is not None %}{{ c.oos|floatformat:1 }}{% else %}—{% endif %}</span></td>
+        {% else %}<td class="muted num">·</td>{% endif %}
+      {% endfor %}</tr>
+    {% endfor %}</tbody>
+  </table>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Each cell shows the best combination for that pair of values when other settings vary too. Empty cells: fewer trades than the minimum.</p>
+</div>
+{% endif %}
+
+{% if sw.status == "done" %}
+<div class="card scroll">
+  <h3 style="margin-top:0">Ranking{% if sw.results|length > 100 %} <span class="muted">(top 100 of {{ sw.results|length }})</span>{% endif %}</h3>
+  <table>
+    <thead>
+      <tr><th>#</th>{% for k in varied %}<th>{{ k }}</th>{% endfor %}
+        <th>IS return</th><th>IS DD</th><th>IS trades</th><th>IS win</th><th>IS PF</th>
+        {% if sw.split %}<th>OOS return</th><th>OOS trades</th><th>OOS PF</th>{% endif %}<th></th></tr>
+    </thead>
+    <tbody>{% for r in rows %}
+      <tr{% if not r.enough_trades %} class="muted"{% endif %}>
+        <td>{{ forloop.counter }}</td>
+        {% for k, v in r.varied %}<td class="mono">{{ v }}</td>{% endfor %}
+        <td class="num {% if r.ins.return_pct >= 0 %}ok{% else %}err{% endif %}">{{ r.ins.return_pct|floatformat:2 }}%</td>
+        <td class="num">{{ r.ins.max_drawdown_pct|floatformat:1 }}%</td>
+        <td class="num">{{ r.ins.trades }}</td>
+        <td class="num">{% if r.ins.win_rate_pct is not None %}{{ r.ins.win_rate_pct|floatformat:0 }}%{% else %}—{% endif %}</td>
+        <td class="num">{{ r.ins.profit_factor|floatformat:2|default:"—" }}</td>
+        {% if sw.split %}
+          {% if r.oos %}
+          <td class="num {% if r.oos.return_pct >= 0 %}ok{% else %}err{% endif %}">{{ r.oos.return_pct|floatformat:2 }}%</td>
+          <td class="num">{{ r.oos.trades }}</td><td class="num">{{ r.oos.profit_factor|floatformat:2|default:"—" }}</td>
+          {% else %}<td colspan="3" class="muted">—</td>{% endif %}
+        {% endif %}
+        <td><form class="inline" method="post" action="{% url 'trading:sweep_apply' sw.pk r.index %}">{% csrf_token %}<button class="btn" title="Save these settings as a new strategy">Save as strategy</button></form></td>
+      </tr>
+    {% empty %}<tr><td colspan="12" class="muted">No results.</td></tr>{% endfor %}</tbody>
+  </table>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Greyed rows had fewer than {{ sw.min_trades }} in-sample trades. IS = in-sample, OOS = out-of-sample, DD = max drawdown, PF = profit factor.</p>
+</div>
+{% endif %}
+{% endblock %}

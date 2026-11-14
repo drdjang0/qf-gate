@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Portfolio #{{ run.pk }} · QF-gate{% endblock %}
+{% block head %}{% if run.status == "queued" or run.status == "running" %}<meta http-equiv="refresh" content="3">{% endif %}
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin:0">Portfolio #{{ run.pk }} · <a href="{% url 'trading:strategy_detail' run.config_id %}">{{ run.config.name }}</a></h2>
+  <p class="muted" style="margin-bottom:0">{{ run.strategy_key }} · {{ run.interval }} · {% for c in coins %}<span class="mono">{{ c.pair }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}
+    · {{ run.start|date:"Y-m-d" }} → {{ run.end|date:"Y-m-d" }} · max {{ run.max_open }} open ·
+    <span class="badge {% if run.status == 'done' %}ok{% elif run.status == 'failed' %}err{% else %}warn{% endif %}">{{ run.get_status_display }}</span></p>
+  {% if run.message %}<p class="err">{{ run.message }}</p>{% endif %}
+</div>
+{% if run.status == "done" %}
+<div class="card grid">
+  <div class="stat"><span class="muted">Return</span><b class="{% if m.return_pct >= 0 %}ok{% else %}err{% endif %}">{{ m.return_pct|floatformat:2 }}%</b></div>
+  <div class="stat"><span class="muted">Buy &amp; hold (avg of coins)</span><b>{{ m.buy_hold_pct|floatformat:2 }}%</b></div>
+  <div class="stat"><span class="muted">Max drawdown</span><b>{{ m.max_drawdown_pct|floatformat:2 }}%</b></div>
+  <div class="stat"><span class="muted">Trades</span><b>{{ m.trades }}</b></div>
+  <div class="stat"><span class="muted">Win rate</span><b>{% if m.win_rate_pct is not None %}{{ m.win_rate_pct|floatformat:0 }}%{% else %}—{% endif %}</b></div>
+  <div class="stat"><span class="muted">Profit factor</span><b>{{ m.profit_factor|floatformat:2|default:"—" }}</b></div>
+  <div class="stat"><span class="muted">Sharpe / Sortino</span><b>{{ m.sharpe|floatformat:2|default:"—" }} / {{ m.sortino|floatformat:2|default:"—" }}</b></div>
+  <div class="stat"><span class="muted">Entries blocked (all slots full)</span><b>{{ m.blocked_max_open }}</b></div>
+  <div class="stat"><span class="muted">Time in market</span><b>{{ m.exposure_pct|floatformat:1 }}%</b></div>
+</div>
+<div class="card"><b>Equity</b><div id="eq" style="height:220px;margin-top:8px"></div></div>
+{{ run.equity|json_script:"eq-data" }}
+<script>
+(function () {
+  if (!window.LightweightCharts) return;
+  const css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
+  const c = LightweightCharts.createChart(document.getElementById('eq'), { autoSize: true,
+    layout: { background: { color: v('--card') }, textColor: v('--ink') },
+    grid: { vertLines: { color: v('--line') }, horzLines: { color: v('--line') } }, timeScale: { timeVisible: true } });
+  const s = c.addAreaSeries({ lineColor: '#2563eb', topColor: 'rgba(37,99,235,.25)', bottomColor: 'rgba(37,99,235,0)', lineWidth: 2 });
+  s.setData(JSON.parse(document.getElementById('eq-data').textContent).map(([t, e]) => ({ time: t, value: e })));
+  c.timeScale().fitContent();
+})();
+</script>
+<div class="card scroll">
+  <h3 style="margin-top:0">By coin</h3>
+  <table><thead><tr><th>Coin</th><th class="num">Trades</th><th class="num">Wins</th><th class="num">P&amp;L</th></tr></thead>
+    <tbody>{% for coin, p in per_coin %}<tr><td class="mono">{{ coin }}</td><td class="num">{{ p.trades }}</td><td class="num">{{ p.wins }}</td>
+      <td class="num {% if p.pnl >= 0 %}ok{% else %}err{% endif %}">{{ p.pnl|floatformat:2 }}</td></tr>{% endfor %}</tbody></table>
+</div>
+<div class="card scroll">
+  <h3 style="margin-top:0">Trades ({{ m.trades }})</h3>
+  <table><thead><tr><th>Coin</th><th>Entry (UTC)</th><th class="num">Entry</th><th>Exit (UTC)</th><th class="num">Exit</th><th class="num">P&amp;L</th><th class="num">R</th><th>Exit reason</th><th>Entry reason</th></tr></thead>
+    <tbody>{% for t in trades %}<tr><td class="mono">{{ t.coin }}</td><td class="mono">{{ t.entry_dt|date:"m-d H:i" }}</td><td class="num">{{ t.entry_price|floatformat:4 }}</td>
+      <td class="mono">{{ t.exit_dt|date:"m-d H:i" }}</td><td class="num">{{ t.exit_price|floatformat:4 }}</td>
+      <td class="num {% if t.pnl >= 0 %}ok{% else %}err{% endif %}">{{ t.pnl|floatformat:2 }}</td><td class="num">{{ t.r_multiple|floatformat:2 }}</td>
+      <td>{{ t.exit_reason }}</td><td class="muted">{{ t.entry_reason|truncatechars:60 }}</td></tr>
+    {% empty %}<tr><td colspan="9" class="muted">No trades.</td></tr>{% endfor %}</tbody></table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,70 @@
+# Full stack: PostgreSQL + web + worker (schedule/jobs) + live stream.
+#   docker compose up -d --build
+#   docker compose exec web python manage.py createsuperuser
+# Put DJANGO_SECRET_KEY and POSTGRES_PASSWORD in .env (see .env.example).
+# Only PostgreSQL for local development:  docker compose up -d db
+
+x-app: &app
+  build: .
+  env_file: .env
+  environment:
+    POSTGRES_HOST: db
+    POSTGRES_DB: ${POSTGRES_DB:-qfgate}
+    POSTGRES_USER: ${POSTGRES_USER:-qfgate}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    DJANGO_DEBUG: "false"
+  volumes:
+    - archive:/app/var
+  depends_on:
+    db:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-qfgate}
+      POSTGRES_USER: ${POSTGRES_USER:-qfgate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"   # local only; never expose the DB publicly
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: python manage.py migrate --noinput
+    restart: "no"
+
+  web:
+    <<: *app
+    ports:
+      - "127.0.0.1:8000:8000"   # put a TLS reverse proxy (Caddy/nginx) in front for remote access
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *app
+    command: python manage.py run_worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  stream:
+    <<: *app
+    command: python manage.py stream_candles
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  archive:

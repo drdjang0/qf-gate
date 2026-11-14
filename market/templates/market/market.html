@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% load tz market_extras %}
+{% block title %}{{ coin.pair }} · Market · QF-gate{% endblock %}
+{% block main_attrs %} style="max-width:1600px"{% endblock %}
+{% block head %}
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  .mkt { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:16px; align-items:start; }
+  .mkt .card { margin-bottom:0; }
+  .mkt #chart { height:560px; }
+  .ticker { display:flex; flex-wrap:wrap; gap:6px 24px; align-items:center; }
+  .ticker .big { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .ticker .k { display:block; font-size:12px; color:var(--muted); }
+  .ticker .v { font-variant-numeric:tabular-nums; font-weight:600; }
+  .ticker select { width:auto; font-weight:700; }
+  .up { color:#16a34a; } .down { color:#dc2626; }
+  .book { padding:12px; font-size:12px; font-variant-numeric:tabular-nums; }
+  .book .bar { display:flex; gap:6px; align-items:center; margin-bottom:8px; }
+  .book .bar select { width:auto; padding:2px 4px; font-size:12px; }
+  .book .cols, .book .row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; }
+  .book .cols { color:var(--muted); padding:0 4px 4px; }
+  .book .cols span:not(:first-child), .book .row span:not(:first-child) { text-align:right; }
+  .book .side { height:236px; overflow-y:auto; display:flex; flex-direction:column; }
+  .book .side.asks { flex-direction:column-reverse; }
+  .book .row { position:relative; padding:1px 4px; line-height:18px; }
+  .book .row i { position:absolute; top:0; bottom:0; right:0; z-index:0; }
+  .book .row span { position:relative; z-index:1; }
+  .book .asks i { background:rgba(220,38,38,.14); } .book .bids i { background:rgba(22,163,74,.14); }
+  .book .mid { display:flex; justify-content:space-between; align-items:baseline; padding:6px 4px;
+               border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin:4px 0; }
+  .book .mid b { font-size:18px; }
+  .book .trades { height:520px; overflow-y:auto; }
+  .tabs { display:flex; gap:2px; margin-bottom:8px; border-bottom:1px solid var(--line); }
+  .tabs button { border:0; background:none; color:var(--muted); padding:4px 10px; cursor:pointer; font:inherit; font-weight:600;
+                 border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tabs button.active { color:var(--ink); border-bottom-color:var(--accent); }
+  tr.day { cursor:pointer; } tr.day:hover td { background:var(--bg); }
+  tr.day.sel td { background:rgba(37,99,235,.08); }
+  @media (max-width: 1000px) { .mkt { grid-template-columns:1fr; } .mkt #chart { height:380px; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="card ticker">
+  <select id="coin-pick" aria-label="Coin">{% for c in coins %}<option value="{% url 'market:market_page' c.pk %}"{% if c.pk == coin.pk %} selected{% endif %}>{{ c.pair }}</option>{% endfor %}</select>
+  <div><span class="big" id="t-last">—</span> <span id="t-chg" class="v"></span></div>
+  <div><span class="k">24h high</span><span class="v" id="t-high">—</span></div>
+  <div><span class="k">24h low</span><span class="v" id="t-low">—</span></div>
+  <div><span class="k">24h volume ({{ coin.gate_currency|default:coin.symbol }})</span><span class="v" id="t-vb">—</span></div>
+  <div><span class="k">24h volume ({{ coin.quote }})</span><span class="v" id="t-vq">—</span></div>
+  <span style="margin-left:auto"></span>
+  <a class="btn" href="{% url 'market:zones_page' coin.pk %}">Zones</a>
+  <a class="btn" href="{% url 'market:coin_detail' coin.pk %}">Coin details</a>
+</div>
+
+<div class="mkt" style="margin-top:16px">
+  <div>{% include "market/_live_chart.html" %}</div>
+
+  <div class="card book">
+    <div class="tabs"><button type="button" class="active" data-tab="book">Order book</button><button type="button" data-tab="trades">Market trades</button></div>
+    <div id="tab-book">
+      <div class="bar">
+        <label class="muted" for="b-group">Group</label>
+        <select id="b-group"><option value="0">none</option>{% for g in groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}</select>
+        <label class="muted" for="b-depth">Depth</label>
+        <select id="b-depth">{% for d in depths %}<option value="{{ d }}"{% if d == default_depth %} selected{% endif %}>{{ d }}</option>{% endfor %}</select>
+        <span id="b-status" class="muted" style="margin-left:auto"></span>
+      </div>
+      <div class="cols"><span>Price ({{ coin.quote }})</span><span>Amount ({{ coin.gate_currency|default:coin.symbol }})</span><span>Total</span></div>
+      <div class="side asks" id="asks"></div>
+      <div class="mid"><b id="b-last">—</b><span class="muted" id="b-spread"></span></div>
+      <div class="side bids" id="bids"></div>
+    </div>
+    <div id="tab-trades" hidden>
+      <div class="cols"><span>Time</span><span>Price ({{ coin.quote }})</span><span>Amount</span></div>
+      <div class="trades" id="trades"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const url = "{% url 'market:book_json' coin.pk %}";
+  const AP = Math.min({{ pair_info.amount_precision }}, 6);
+  const $ = (id) => document.getElementById(id);
+  let group = '0', depth = '{{ default_depth }}', lastPrice = null, busy = false;
+  try { group = localStorage.getItem('qf-book-group-{{ coin.pk }}') || group; depth = localStorage.getItem('qf-book-depth') || depth; } catch (e) {}
+  if (![...$('b-group').options].some(o => o.value === group)) group = '0';
+  if (![...$('b-depth').options].some(o => o.value === depth)) depth = '{{ default_depth }}';
+  $('b-group').value = group; $('b-depth').value = depth;
+
+  $('coin-pick').addEventListener('change', (e) => { location.href = e.target.value; });
+  document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
+    $('tab-book').hidden = b.dataset.tab !== 'book'; $('tab-trades').hidden = b.dataset.tab !== 'trades';
+  }));
+  $('b-group').addEventListener('change', (e) => { group = e.target.value; try { localStorage.setItem('qf-book-group-{{ coin.pk }}', group); } catch (x) {} refresh(); });
+  $('b-depth').addEventListener('change', (e) => { depth = e.target.value; try { localStorage.setItem('qf-book-depth', depth); } catch (x) {} refresh(); });
+
+  const amt = (v) => Number(v).toLocaleString(undefined, { minimumFractionDigits: AP, maximumFractionDigits: AP });
+  const big = (v) => { const n = Number(v); if (!isFinite(n)) return '—';
+    return n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(2) + 'K' : n.toFixed(2); };
+  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function side(el, rows, cls) {
+    const max = rows.length ? Number(rows[rows.length - 1].total) : 1;
+    el.innerHTML = rows.map(r => `<div class="row"><i style="width:${(Number(r.total) / max * 100).toFixed(1)}%"></i>` +
+      `<span class="${cls}">${esc(r.price)}</span><span>${amt(r.amount)}</span><span>${amt(r.total)}</span></div>`).join('');
+  }
+
+  function render(d) {
+    side($('asks'), d.asks, 'down'); side($('bids'), d.bids, 'up');
+    const t = d.ticker;
+    if (t) {
+      const last = Number(t.last), dir = lastPrice == null || last === lastPrice ? '' : last > lastPrice ? 'up' : 'down';
+      const chg = Number(t.change_pct);
+      $('b-last').textContent = t.last + (dir === 'up' ? ' ↑' : dir === 'down' ? ' ↓' : '');
+      $('b-last').className = dir || (chg >= 0 ? 'up' : 'down');
+      $('t-last').textContent = t.last; $('t-last').className = 'big ' + (chg >= 0 ? 'up' : 'down');
+      $('t-chg').textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%'; $('t-chg').className = 'v ' + (chg >= 0 ? 'up' : 'down');
+      $('t-high').textContent = t.high_24h; $('t-low').textContent = t.low_24h;
+      $('t-vb').textContent = big(t.base_volume); $('t-vq').textContent = big(t.quote_volume);
+      document.title = `${t.last} · {{ coin.pair }} · QF-gate`;
+      lastPrice = last;
+    }
+    $('b-spread').textContent = d.spread ? `spread ${d.spread.abs}${d.spread.pct != null ? ' (' + (d.spread.pct >= 0.01 ? d.spread.pct.toFixed(3) : d.spread.pct.toPrecision(2)) + '%)' : ''}` : '';
+    $('trades').innerHTML = d.trades.map(x => `<div class="row"><span class="muted">${new Date(x.time_ms).toLocaleTimeString([], { hour12: false })}</span>` +
+      `<span class="${x.side === 'buy' ? 'up' : 'down'}">${esc(x.price)}</span><span>${amt(x.amount)}</span></div>`).join('');
+    $('b-status').textContent = '';
+  }
+
+  async function refresh() {
+    if (busy) return; busy = true;
+    try {
+      const r = await fetch(`${url}?depth=${depth}&group=${encodeURIComponent(group)}`, { headers: { Accept: 'application/json' } });
+      if (r.redirected) { location.reload(); return; }
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || r.status);
+      render(d);
+    } catch (e) { $('b-status').textContent = 'offline'; $('b-status').title = e.message; }
+    finally { busy = false; }
+  }
+  refresh();
+  setInterval(() => { if (!document.hidden) refresh(); }, 1000);
+
+  // history rows -> zoom the chart to that day
+  // (delegated: the history table comes after this script in the page)
+  document.addEventListener('click', (e) => {
+    const tr = e.target.closest('tr.day');
+    if (!tr || e.target.closest('a, button')) return;
+    document.querySelectorAll('tr.day.sel').forEach(x => x.classList.remove('sel')); tr.classList.add('sel');
+    const s = Number(tr.dataset.start);
+    if (window.qfChart) window.qfChart.focusDay(s, s + 86400);
+  });
+})();
+</script>
+
+<div class="card scroll" style="margin-top:16px">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline">
+    <h3 style="margin:0">{{ coin.symbol }} day-by-day history</h3>
+    <span class="muted">days and times in {{ day_tz }} · click a day to show it on the chart</span>
+    <a class="btn" style="margin-left:auto" href="{% url 'market:export_levels' %}?coin={{ coin.pk }}">Export Excel</a>
+  </div>
+  {% if summary %}
+  <div class="grid" style="margin:12px 0">
+    <div class="stat"><span class="muted">Days stored</span><b>{{ summary.days }}</b></div>
+    <div class="stat"><span class="muted">Up / down days</span><b><span class="up">{{ summary.up }}</span> / <span class="down">{{ summary.down }}</span></b></div>
+    <div class="stat"><span class="muted">Avg daily range</span><b>{{ summary.avg_range_pct|floatformat:2 }}%</b></div>
+    <div class="stat"><span class="muted">Broke PDH</span><b>{{ summary.broke_pdh }} of {{ summary.with_prev }}</b></div>
+    <div class="stat"><span class="muted">Broke PDL</span><b>{{ summary.broke_pdl }} of {{ summary.with_prev }}</b></div>
+    <div class="stat"><span class="muted">Period high</span><b class="mono">{{ summary.high.high|price }}</b><span class="muted mono">{{ summary.high.date|date:"Y-m-d" }}</span></div>
+    <div class="stat"><span class="muted">Period low</span><b class="mono">{{ summary.low.low|price }}</b><span class="muted mono">{{ summary.low.date|date:"Y-m-d" }}</span></div>
+  </div>
+  {% endif %}
+  <table>
+    <thead><tr>
+      <th>Date</th><th class="num">Open</th><th class="num">High</th><th>High time</th><th class="num">Low</th><th>Low time</th>
+      <th class="num">Close</th><th class="num">Change</th><th class="num">Range</th>
+      <th class="num">Vol ({{ coin.gate_currency|default:coin.symbol }})</th><th class="num">Vol ({{ coin.quote }})</th><th class="num" title="Taker buy minus taker sell volume, % of the day's volume">Delta</th>
+      <th class="num">PDH</th><th class="num">PDL</th><th>Broke</th><th>Precision</th><th>Status</th>
+    </tr></thead>
+    <tbody>
+    {% timezone day_tz %}
+    {% for r in history %}
+      <tr class="day" data-start="{{ r.start }}">
+        <td class="mono">{{ r.level.date|date:"D Y-m-d" }}</td>
+        <td class="num">{{ r.level.open|price }}</td>
+        <td class="num">{{ r.level.high|price }}</td>
+        <td class="mono">{{ r.level.high_time|date:"H:i" }}</td>
+        <td class="num">{{ r.level.low|price }}</td>
+        <td class="mono">{{ r.level.low_time|date:"H:i" }}</td>
+        <td class="num">{{ r.level.close|price }}</td>
+        <td class="num {% if r.change_pct > 0 %}up{% elif r.change_pct < 0 %}down{% endif %}">{% if r.change_pct is not None %}{% if r.change_pct > 0 %}+{% endif %}{{ r.change_pct|floatformat:2 }}%{% else %}—{% endif %}</td>
+        <td class="num">{{ r.range_pct|floatformat:2 }}%</td>
+        <td class="num">{{ r.volume|floatformat:2|default:"—" }}</td>
+        <td class="num">{{ r.quote_volume|floatformat:0|default:"—" }}</td>
+        <td class="num {% if r.delta > 0 %}up{% elif r.delta < 0 %}down{% endif %}">{% if r.delta is not None %}{% if r.delta > 0 %}+{% endif %}{{ r.delta_pct|floatformat:1 }}%{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="num muted">{{ r.pdh|price }}</td>
+        <td class="num muted">{{ r.pdl|price }}</td>
+        <td>{% if r.broke_pdh %}<span class="up" title="High went above the previous day's high">PDH ↑</span>{% endif %}
+            {% if r.broke_pdl %}<span class="down" title="Low went below the previous day's low">PDL ↓</span>{% endif %}</td>
+        <td><span class="badge {% if r.level.time_precision == '1m' %}ok{% else %}warn{% endif %}">{{ r.level.time_precision }}</span></td>
+        <td>{% if r.level.cross_check %}<span class="err" title="{{ r.level.cross_check }}">mismatch</span>
+            {% elif r.level.is_complete %}<span class="ok">final</span>{% else %}<span class="warn">live</span>{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="17" class="muted">No history yet. Open <a href="{% url 'market:coin_detail' coin.pk %}">the coin page</a> and press Sync.</td></tr>
+    {% endfor %}
+    {% endtimezone %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Coins · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:12px">
+    <h2 style="margin:0">Coins</h2>
+    <a class="btn primary" style="margin-left:auto" href="{% url 'market:coin_create' %}">Add coin</a>
+  </div>
+</div>
+<div class="card scroll">
+  <table>
+    <thead><tr>
+      <th>Symbol</th><th>Gate pair</th><th>Chain</th><th>Contract</th><th>Verified</th>
+      <th>Sync</th><th>Last 1m candle (UTC)</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for c in object_list %}
+      <tr>
+        <td><a href="{% url 'market:coin_detail' c.pk %}"><b>{{ c.symbol }}</b></a> <span class="muted">{{ c.name }}</span>
+          {% if not c.is_active %}<span class="badge muted">inactive</span>{% endif %}</td>
+        <td class="mono">{{ c.pair }}</td>
+        <td>{{ c.chain }}</td>
+        <td class="mono">{% if c.contract_address %}{{ c.contract_address|truncatechars:18 }}{% else %}<span class="muted">native</span>{% endif %}</td>
+        <td>{% if c.verified_at %}<span class="badge ok">verified</span>{% else %}<span class="badge err">no</span>{% endif %}</td>
+        <td><span class="badge {% if c.sync_status == 'ok' %}ok{% elif c.sync_status == 'error' %}err{% elif c.sync_status == 'running' %}warn{% else %}muted{% endif %}">{{ c.get_sync_status_display }}</span></td>
+        <td class="mono">{{ c.last_candle|date:"Y-m-d H:i"|default:"—" }}</td>
+        <td><a href="{% url 'market:coin_update' c.pk %}">Edit</a> · <a href="{% url 'market:coin_delete' c.pk %}">Delete</a></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="8" class="muted">No coins yet. Add one with its chain and contract address.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

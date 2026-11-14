@@ -1,0 +1,11 @@
+Django>=5.2,<6.0
+requests>=2.32
+openpyxl>=3.1
+websockets>=13
+
+# Production (also installed by the Dockerfile). Optional for local SQLite development.
+psycopg[binary]>=3.2      # PostgreSQL driver, used when POSTGRES_DB is set
+whitenoise>=6.7           # serves static files (admin CSS) when DJANGO_DEBUG=false
+gunicorn>=23 ; sys_platform != "win32"   # Linux/container web server (use waitress on Windows)
+waitress>=3 ; sys_platform == "win32"
+numpy>=2.0                # ML strategy (trading/strategies/ml.py)

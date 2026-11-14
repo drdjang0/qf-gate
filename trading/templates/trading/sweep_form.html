@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Sweep · {{ config.name }} · QF-gate{% endblock %}
+{% block content %}
+<form method="post">
+  {% csrf_token %}
+  <div class="card">
+    <h2 style="margin-top:0">Parameter sweep · <a href="{% url 'trading:strategy_detail' config.pk %}">{{ config.name }}</a></h2>
+    <p class="muted">Backtests every combination of the values you enter (max {{ max_combos }}), on the same candles.
+      Fill in only the settings you want to vary; empty boxes keep the strategy's current value.
+      Ranges use <span class="mono">start:stop:step</span>, e.g. <span class="mono">1:4:0.5</span> = 1, 1.5, … 4.</p>
+    {% if form.non_field_errors %}<div class="err">{{ form.non_field_errors }}</div>{% endif %}
+    <div style="display:flex;flex-wrap:wrap;gap:16px">
+      <p>{{ form.start.label_tag }} {{ form.start }}</p>
+      <p>{{ form.end.label_tag }} {{ form.end }}</p>
+      <p>{{ form.oos_pct.label_tag }} {{ form.oos_pct }}</p>
+      <p>{{ form.rank_by.label_tag }} {{ form.rank_by }}</p>
+      <p>{{ form.min_trades.label_tag }} {{ form.min_trades }}</p>
+      <p>{{ form.method.label_tag }} {{ form.method }}</p>
+      <p>{{ form.budget.label_tag }} {{ form.budget }}</p>
+      <p>{{ form.wf_folds.label_tag }} {{ form.wf_folds }}</p>
+    </div>
+    <p class="helptext">{{ form.oos_pct.help_text }} {{ form.min_trades.help_text }} {{ form.budget.help_text }} {{ form.wf_folds.help_text }}</p>
+    <p class="muted mono" id="combo-count"></p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Strategy settings to vary</h3>
+    {% for f in form.strategy_grid_fields %}<p>{{ f.label_tag }} {{ f }} <span class="helptext">{{ f.help_text }}</span>{{ f.errors }}</p>{% endfor %}
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Risk &amp; cost settings to vary</h3>
+    {% for f in form.risk_grid_fields %}<p>{{ f.label_tag }} {{ f }} <span class="helptext">{{ f.help_text }}</span>{{ f.errors }}</p>{% endfor %}
+    <button class="btn primary" type="submit">Run sweep</button>
+    <a class="btn" href="{% url 'trading:strategy_detail' config.pk %}">Cancel</a>
+  </div>
+</form>
+<script>
+(function () {
+  // rough live count of combinations (the server re-checks exactly)
+  const boxes = [...document.querySelectorAll('input[name^="g_"]')], out = document.getElementById('combo-count');
+  function count(v) {
+    v = v.trim(); if (!v) return 1;
+    const l = v.toLowerCase();
+    if (l === 'both' || l === 'all') return 2;
+    if (v.includes(':')) { const [a, b, s] = v.split(':').map(Number); return s > 0 && b >= a ? Math.floor((b - a) / s + 1e-9) + 1 : NaN; }
+    return new Set(v.split(',').map(x => x.trim()).filter(Boolean)).size;
+  }
+  function update() {
+    const n = boxes.reduce((acc, b) => acc * count(b.value), 1);
+    const smart = document.getElementById('id_method').value === 'smart';
+    const budget = Math.min(Number(document.getElementById('id_budget').value) || 200, n);
+    const folds = Number(document.getElementById('id_wf_folds').value) || 0;
+    const runs = (smart ? budget : n) * (1 + folds);
+    out.textContent = !Number.isFinite(n) ? 'Check the range syntax'
+      : `≈ ${n.toLocaleString()} combination${n === 1 ? '' : 's'}` + (smart ? `, smart search runs ${budget}` : '') +
+        (folds ? `, ${folds} walk-forward folds` : '') + ` · ${runs.toLocaleString()} backtests`;
+  }
+  boxes.forEach(b => b.addEventListener('input', update));
+  ['id_method', 'id_budget', 'id_wf_folds'].forEach(id => document.getElementById(id).addEventListener('input', update));
+  update();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% load market_extras %}
+{% block title %}Screener · QF-gate{% endblock %}
+{% block main_attrs %} style="max-width:1400px"{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">Coin screener <span class="muted" style="font-size:14px">Gate.io spot, 24h data, refreshed every 30 s</span></h2>
+  <form method="get" id="sf" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+    <p><label>Quote</label><input type="text" name="quote" value="{{ f.quote }}" style="width:80px"></p>
+    <p><label>Min 24h volume ({{ f.quote }})</label><input type="number" name="min_volume" value="{{ f.min_volume|floatformat:0 }}" step="any" style="width:140px"></p>
+    <p><label>Max spread %</label><input type="number" name="max_spread_pct" value="{{ f.max_spread_pct }}" step="any" style="width:90px"></p>
+    <p><label>24h range % (min–max)</label><span style="display:flex;gap:4px"><input type="number" name="min_range_pct" value="{{ f.min_range_pct }}" step="any" style="width:70px"><input type="number" name="max_range_pct" value="{{ f.max_range_pct }}" step="any" style="width:80px"></span></p>
+    <p><label>Price (min–max, 0 = any)</label><span style="display:flex;gap:4px"><input type="number" name="min_price" value="{{ f.min_price }}" step="any" style="width:90px"><input type="number" name="max_price" value="{{ f.max_price }}" step="any" style="width:90px"></span></p>
+    <p><label>24h change % (min–max)</label><span style="display:flex;gap:4px"><input type="number" name="min_change_pct" value="{{ f.min_change_pct }}" step="any" style="width:70px"><input type="number" name="max_change_pct" value="{{ f.max_change_pct }}" step="any" style="width:80px"></span></p>
+    <p><label>Blacklist (comma)</label><input type="text" name="blacklist" id="bl" value="{{ blacklist }}" placeholder="e.g. USDC,FDUSD" style="width:180px"></p>
+    <p><label>Sort</label><select name="sort" style="width:auto">
+      <option value="volume"{% if f.sort == "volume" %} selected{% endif %}>Volume</option>
+      <option value="change"{% if f.sort == "change" %} selected{% endif %}>24h change</option>
+      <option value="range"{% if f.sort == "range" %} selected{% endif %}>Volatility (range)</option>
+      <option value="spread"{% if f.sort == "spread" %} selected{% endif %}>Tightest spread</option></select></p>
+    <p><label>Show</label><input type="number" name="limit" value="{{ f.limit }}" min="1" max="500" style="width:70px"></p>
+    <p><button class="btn primary">Apply</button></p>
+  </form>
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  <p class="muted" style="font-size:12px;margin-bottom:0">{{ rows|length }} of {{ total }} {{ f.quote }} pairs match. A shortlist only: adding a coin still
+    verifies it by chain + contract address. Your blacklist is remembered in this browser.</p>
+</div>
+
+<div class="card scroll">
+  <table>
+    <thead><tr><th>#</th><th>Pair</th><th class="num">Last</th><th class="num">24h change</th><th class="num">24h volume ({{ f.quote }})</th>
+      <th class="num">Spread</th><th class="num">24h range</th><th></th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr><td class="muted">{{ forloop.counter }}</td><td class="mono"><b>{{ r.base }}</b>_{{ f.quote }}</td>
+        <td class="num mono">{{ r.last|fprice }}</td>
+        <td class="num {% if r.change_pct >= 0 %}ok{% else %}err{% endif %}">{% if r.change_pct > 0 %}+{% endif %}{{ r.change_pct|floatformat:2 }}%</td>
+        <td class="num">{{ r.volume|floatformat:0 }}</td>
+        <td class="num">{{ r.spread_pct|floatformat:3 }}%</td>
+        <td class="num">{{ r.range_pct|floatformat:1 }}%</td>
+        <td>{% if r.added %}<span class="badge ok">added</span>{% else %}<a class="btn" href="{% url 'market:coin_create' %}?symbol={{ r.base }}&gate_currency={{ r.base }}&quote={{ f.quote }}">Add coin</a>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="8" class="muted">No pairs match these filters.</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+<script>
+(function () {
+  const bl = document.getElementById('bl');
+  try {
+    if (!bl.value && !location.search) { const saved = localStorage.getItem('qf-blacklist'); if (saved) { bl.value = saved; } }
+    document.getElementById('sf').addEventListener('submit', () => localStorage.setItem('qf-blacklist', bl.value));
+  } catch (e) {}
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{% if object %}Edit {{ object.symbol }}{% else %}Add coin{% endif %} · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>{% if object %}Edit {{ object.symbol }}{% else %}Add coin{% endif %}</h2>
+  <p class="muted">The coin is identified by <b>chain + contract address</b>, not by its ticker.
+    Paste the contract address and press <i>Look up on Gate.io</i> to fill the rest.
+    Native coins (BTC, ETH, SOL…) have no contract: leave it blank and set the chain to the coin's own chain.</p>
+  <p>
+    <button type="button" class="btn" id="lookup">Look up on Gate.io</button>
+    <span id="lookup-result" class="muted"></span>
+  </p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn primary" type="submit">Save</button>
+    <a class="btn" href="{% if object %}{% url 'market:coin_detail' object.pk %}{% else %}{% url 'market:coin_list' %}{% endif %}">Cancel</a>
+  </form>
+</div>
+<script>
+(function () {
+  const btn = document.getElementById('lookup');
+  const out = document.getElementById('lookup-result');
+  const $ = (n) => document.getElementById('id_' + n);
+  btn.addEventListener('click', async () => {
+    const address = $('contract_address').value.trim();
+    if (!address) { out.textContent = 'Paste a contract address first.'; return; }
+    out.textContent = 'Looking up…';
+    try {
+      const r = await fetch('{% url "market:contract_lookup" %}?address=' + encodeURIComponent(address));
+      const data = await r.json();
+      if (!r.ok) { out.textContent = data.error || 'Lookup failed'; return; }
+      if (!data.matches.length) { out.textContent = 'No Gate.io currency lists this contract.'; return; }
+      out.textContent = data.matches.map(m => `${m.currency} (${m.name}) on ${m.chain}${m.delisted ? ' [delisted]' : ''}`).join(' | ');
+      if (data.matches.length === 1) {
+        const m = data.matches[0];
+        if (!$('symbol').value) $('symbol').value = m.currency;
+        if (!$('name').value) $('name').value = m.name;
+        $('chain').value = m.chain;
+        $('gate_currency').value = m.currency;
+      }
+    } catch (e) { out.textContent = 'Lookup failed: ' + e; }
+  });
+})();
+</script>
+{% endblock %}

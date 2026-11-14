@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Paper #{{ s.pk }} · QF-gate{% endblock %}
+{% block head %}<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+{% if s.status == "running" %}<meta http-equiv="refresh" content="60">{% endif %}{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <h2 style="margin:0">Paper #{{ s.pk }} · <a href="{% url 'trading:strategy_detail' s.config_id %}">{{ s.config.name }}</a></h2>
+    <span class="badge {% if s.status == 'running' %}ok{% elif s.status == 'error' %}err{% else %}muted{% endif %}">{{ s.get_status_display }}</span>
+    <span style="margin-left:auto"></span>
+    {% if s.status == "running" %}
+    <form class="inline" method="post" action="{% url 'trading:paper_stop' s.pk %}" onsubmit="return confirm('Stop this paper session?')">{% csrf_token %}<button class="btn danger">Stop</button></form>
+    {% endif %}
+  </div>
+  <p class="muted" style="margin-bottom:0">{{ s.strategy_key }} · <span class="mono">{{ s.config.coin.pair }}</span> · {{ s.interval }} ·
+    started {{ s.started_at|date:"Y-m-d H:i" }} UTC{% if s.stopped_at %} · stopped {{ s.stopped_at|date:"Y-m-d H:i" }}{% endif %} ·
+    last bar {{ s.last_bar_dt|date:"Y-m-d H:i"|default:"—" }} UTC · simulated fills, no real orders</p>
+  {% if s.last_error %}<p class="err mono" style="white-space:pre-wrap">{{ s.last_error }}</p>{% endif %}
+</div>
+
+<div class="card grid">
+  <div class="stat"><span class="muted">Equity</span><b>{{ equity|floatformat:2 }}</b></div>
+  <div class="stat"><span class="muted">Return</span><b class="{% if ret_pct >= 0 %}ok{% else %}err{% endif %}">{{ ret_pct|floatformat:2 }}%</b></div>
+  <div class="stat"><span class="muted">Realized P&amp;L</span><b>{{ realized|floatformat:2 }}</b></div>
+  <div class="stat"><span class="muted">Cash</span><b>{{ cash|floatformat:2 }}</b></div>
+  <div class="stat"><span class="muted">Closed trades</span><b>{{ trades|length }}</b></div>
+  <div class="stat"><span class="muted">Position</span><b>{% if pos %}long {{ pos.qty|floatformat:6 }}{% else %}flat{% endif %}</b></div>
+  <div class="stat"><span class="muted">Blocked by protections</span><b>{% if blocked %}{% for k, v in blocked.items %}{{ v }} {{ k }}{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}0{% endif %}</b></div>
+</div>
+{% if pos %}
+<div class="card">
+  <b>Open position</b> — entry {{ pos.entry_price|floatformat:4 }}, stop {{ pos.stop|floatformat:4 }}{% if pos.target %}, target {{ pos.target|floatformat:4 }}{% endif %}
+  <span class="muted">({{ pos.entry_reason }})</span>
+</div>
+{% endif %}
+{% if pending %}<div class="card warn">Pending {{ pending.action }} at the next bar's open — {{ pending.reason }}</div>{% endif %}
+
+{% include "trading/_price_chart.html" %}
+
+{% include "trading/_breakdowns.html" %}
+
+<div class="card scroll">
+  <h3 style="margin-top:0">Closed trades</h3>
+  <table>
+    <thead><tr><th>Entry (UTC)</th><th>Entry</th><th>Exit (UTC)</th><th>Exit</th><th>P&amp;L</th><th>R</th><th>Exit</th></tr></thead>
+    <tbody>{% for t in trades %}
+      <tr><td class="mono">{{ t.entry_time|date:"m-d H:i" }}</td><td class="num">{{ t.entry_price|floatformat:4 }}</td>
+        <td class="mono">{{ t.exit_time|date:"m-d H:i" }}</td><td class="num">{{ t.exit_price|floatformat:4 }}</td>
+        <td class="num {% if t.pnl >= 0 %}ok{% else %}err{% endif %}">{{ t.pnl|floatformat:2 }}</td>
+        <td class="num">{{ t.r_multiple|floatformat:2 }}</td><td>{{ t.exit_reason }}</td></tr>
+    {% empty %}<tr><td colspan="7" class="muted">No closed trades yet.</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+{% endblock %}

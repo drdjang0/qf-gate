@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Jobs · QF-gate{% endblock %}
+{% block head %}<meta http-equiv="refresh" content="10">{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin:0">Background jobs</h2>
+  <p class="muted" style="margin-bottom:0">Run by <span class="mono">python manage.py run_worker</span>:
+    scheduled syncs (every 15 min by default), daily identity re-checks, and syncs you queue from a coin page.</p>
+</div>
+<div class="card scroll">
+  <table>
+    <thead><tr><th>Created (UTC)</th><th>Job</th><th>Coin</th><th>Origin</th><th>Status</th><th>Took</th><th>Result</th></tr></thead>
+    <tbody>
+    {% for j in object_list %}
+      <tr>
+        <td class="mono">{{ j.created_at|date:"Y-m-d H:i:s" }}</td>
+        <td>{{ j.get_kind_display }}</td>
+        <td><a href="{% url 'market:coin_detail' j.coin_id %}">{{ j.coin.symbol }}</a></td>
+        <td class="muted">{{ j.get_origin_display }}</td>
+        <td><span class="badge {% if j.status == 'done' %}ok{% elif j.status == 'failed' %}err{% elif j.status == 'running' %}warn{% else %}muted{% endif %}">{{ j.get_status_display }}</span></td>
+        <td class="mono">{% if j.duration %}{{ j.duration.total_seconds|floatformat:1 }} s{% endif %}</td>
+        <td class="mono muted" style="white-space:normal;max-width:520px">{{ j.message|truncatechars:220 }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="muted">No jobs yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if is_paginated %}
+  <p>{% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Newer</a>{% endif %}
+     Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+     {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Older</a>{% endif %}</p>
+  {% endif %}
+</div>
+{% endblock %}

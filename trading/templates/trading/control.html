@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Bots · Control · QF-gate{% endblock %}
+{% block content %}
+<div class="card" style="border-color:{% if c.halted %}var(--err){% else %}var(--line){% endif %}">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <h2 style="margin:0">Control</h2>
+    {% if c.halted %}<span class="badge err">HALTED · {{ c.halted_reason }} · {{ c.halted_at|date:"m-d H:i" }}</span>{% else %}<span class="badge ok">Entries allowed</span>{% endif %}
+    <span class="badge {% if c.live_enabled %}err{% else %}ok{% endif %}">Live switch {% if c.live_enabled %}ON{% else %}off{% endif %}</span>
+    <span class="muted">{{ running }} bot{{ running|pluralize }} running</span>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;align-items:center">
+    {% if c.halted %}
+      <form class="inline" method="post">{% csrf_token %}<input type="hidden" name="action" value="resume"><button class="btn primary">Resume entries</button></form>
+    {% else %}
+      <form class="inline" method="post" style="display:flex;gap:6px">{% csrf_token %}<input type="hidden" name="action" value="halt">
+        <input type="text" name="reason" placeholder="reason (optional)" style="width:200px"><button class="btn">Halt entries</button></form>
+    {% endif %}
+    <form class="inline" method="post" style="display:flex;gap:6px" onsubmit="return confirm('Sell every open bot position at market and stop all bots?')">{% csrf_token %}
+      <input type="hidden" name="action" value="kill"><input type="text" name="confirm" placeholder="type KILL" style="width:110px">
+      <button class="btn danger">Kill switch: flatten &amp; stop all</button></form>
+  </div>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Halt blocks new entries only; stops, targets and exits keep working. The kill switch also sells
+    every open bot position at market and stops all bots. Both are also available in Telegram (/stop, /kill).</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Risk limits <span class="muted">(entries only; exits are never blocked)</span></h3>
+  <form method="post" style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end">{% csrf_token %}<input type="hidden" name="action" value="limits">
+    <p><label>Max daily loss, % of capital</label><input type="number" step="0.1" min="0" name="max_daily_loss_pct" value="{{ c.max_daily_loss_pct }}" style="width:120px"></p>
+    <p><label>Max open exposure (quote, 0 = off)</label><input type="number" step="1" min="0" name="max_exposure" value="{{ c.max_exposure }}" style="width:140px"></p>
+    <p><label>Max orders per hour</label><input type="number" min="1" name="max_orders_per_hour" value="{{ c.max_orders_per_hour }}" style="width:100px"></p>
+    <p><label>Dry-run days before live</label><input type="number" min="0" name="min_dry_run_days" value="{{ c.min_dry_run_days }}" style="width:100px"></p>
+    <p><button class="btn primary">Save limits</button></p>
+  </form>
+  <div class="grid">
+    {% for mode, v in today.items %}<div class="stat"><span class="muted">Realised today ({{ mode|cut:"_" }})</span><b class="{% if v >= 0 %}ok{% else %}err{% endif %}">{{ v|floatformat:2 }}</b></div>{% endfor %}
+    {% for mode, v in exposure.items %}<div class="stat"><span class="muted">Open exposure ({{ mode|cut:"_" }})</span><b>{{ v|floatformat:2 }}</b></div>{% endfor %}
+  </div>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Reaching the daily loss limit halts entries automatically (and alerts you). Capital = the starting cash of the running bots.</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Live trading</h3>
+  {% if live_ok %}<p class="err" style="margin-top:0"><b>All live switches are on.</b> A strategy that passes its promotion checklist can start a live bot.</p>
+  {% else %}<p style="margin-top:0">Live bots are <b>blocked</b>. Every one of these must be true first:</p>
+    <ul>{% for m in live_missing %}<li>{{ m }}</li>{% endfor %}</ul>{% endif %}
+  <form method="post" style="display:flex;gap:8px;align-items:center">{% csrf_token %}<input type="hidden" name="action" value="live">
+    {% if c.live_enabled %}<input type="hidden" name="enable" value="0"><button class="btn">Switch live trading OFF</button>
+    {% else %}<input type="hidden" name="enable" value="1"><input type="text" name="confirm" placeholder="type LIVE" style="width:110px"><button class="btn danger">Switch live trading on</button>{% endif %}
+  </form>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Use a Gate.io API key with spot-trade permission only, IP-whitelisted to your server, never with withdrawal rights.
+    Keys live only in the server environment (GATE_API_KEY / GATE_API_SECRET), never in the database or this page.</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Alerts</h3>
+  <p style="margin-top:0">Telegram: <b class="{% if notify.telegram %}ok{% else %}muted{% endif %}">{% if notify.telegram %}configured{% else %}not set{% endif %}</b>
+    · Webhooks: <b>{{ notify.webhooks }}</b>
+    <form class="inline" method="post">{% csrf_token %}<input type="hidden" name="action" value="test"><button class="btn">Send test alert</button></form></p>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID and/or WEBHOOK_URLS in .env, then run
+    <span class="mono">python manage.py telegram_bot</span> for commands (/status /profit /daily /balance /stop /start /kill /forceexit).</p>
+</div>
+
+<div class="card scroll">
+  <h3 style="margin-top:0">Bots</h3>
+  <table>
+    <thead><tr><th>#</th><th>Strategy</th><th>Mode</th><th>Status</th><th>Position</th><th class="num">Cash</th><th>Started</th></tr></thead>
+    <tbody>{% for b in bots %}
+      <tr><td><a href="{% url 'trading:bot_detail' b.pk %}">#{{ b.pk }}</a></td><td>{{ b.config.name }} <span class="muted mono">{{ b.config.coin.pair }} {{ b.interval }}</span></td>
+        <td><span class="badge {% if b.mode == 'live' %}err{% else %}warn{% endif %}">{% if b.mode == 'live' %}LIVE{% else %}dry-run{% endif %}</span></td>
+        <td>{{ b.get_status_display }}</td>
+        <td>{% if b.pos %}long {{ b.pos.qty|floatformat:6 }} @ {{ b.pos.avg|floatformat:2 }}{% else %}<span class="muted">flat</span>{% endif %}</td>
+        <td class="num">{{ b.state.cash|floatformat:2 }}</td><td class="mono">{{ b.started_at|date:"Y-m-d H:i" }}</td></tr>
+    {% empty %}<tr><td colspan="7" class="muted">No bots yet. Start one from a strategy page (Bots → Start dry-run bot).</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+
+<div class="card scroll">
+  <h3 style="margin-top:0">Signal sharing <span class="muted" style="font-size:13px">API {% if signal_api %}<span class="ok">on</span>{% else %}off (set SIGNAL_API_TOKEN){% endif %}</span></h3>
+  <p class="muted" style="font-size:12px;margin-top:0">Other instances read <span class="mono">/trading/api/v1/signals</span> or push to
+    <span class="mono">/trading/api/v1/signals/ingest</span> with <span class="mono">Authorization: Bearer &lt;token&gt;</span>.
+    To follow another instance: <span class="mono">python manage.py follow_signals --url https://other/ --name other</span> and run a bot
+    with the "Follow remote signals" strategy on the same coin.</p>
+  <table>
+    <thead><tr><th>Received / made</th><th>Source</th><th>Strategy</th><th>Pair</th><th>Action</th><th class="num">Stop</th><th class="num">Target</th><th>Reason</th></tr></thead>
+    <tbody>{% for s in signals %}<tr><td class="mono">{{ s.created_at|date:"m-d H:i" }}</td><td>{{ s.source }}</td><td>{{ s.config_name }}</td>
+      <td class="mono">{{ s.pair }}</td><td>{{ s.action }}</td><td class="num">{{ s.stop|floatformat:4 }}</td><td class="num">{{ s.target|floatformat:4 }}</td>
+      <td class="muted">{{ s.reason|truncatechars:60 }}</td></tr>
+    {% empty %}<tr><td colspan="8" class="muted">No signals yet.</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+
+<div class="card scroll">
+  <h3 style="margin-top:0">Latest orders</h3>
+  <table>
+    <thead><tr><th>Time (UTC)</th><th>Bot</th><th>Side</th><th>Status</th><th class="num">Fill</th><th class="num">P&amp;L</th><th>Reason</th></tr></thead>
+    <tbody>{% for o in orders %}
+      <tr><td class="mono">{{ o.created_at|date:"m-d H:i:s" }}</td><td><a href="{% url 'trading:bot_detail' o.bot_id %}">#{{ o.bot_id }}</a> {{ o.bot.config.coin.pair }}</td>
+        <td class="{% if o.side == 'buy' %}ok{% else %}err{% endif %}">{{ o.side|upper }}</td><td>{{ o.get_status_display }}</td>
+        <td class="num">{{ o.avg_price|floatformat:4|default:"—" }}</td><td class="num">{{ o.pnl|floatformat:2|default:"" }}</td><td>{{ o.reason }}</td></tr>
+    {% empty %}<tr><td colspan="7" class="muted">No orders yet.</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+{% endblock %}

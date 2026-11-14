@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Log in · QF-gate{% endblock %}
+{% block content %}
+<div class="card" style="max-width:420px;margin:40px auto">
+  <h2>Log in</h2>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn primary" type="submit">Log in</button>
+  </form>
+</div>
+{% endblock %}

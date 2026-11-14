@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Bot #{{ bot.pk }} · QF-gate{% endblock %}
+{% block head %}{% if bot.status == "running" %}<meta http-equiv="refresh" content="15">{% endif %}{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <h2 style="margin:0">Bot #{{ bot.pk }} · <a href="{% url 'trading:strategy_detail' bot.config_id %}">{{ bot.config.name }}</a></h2>
+    <span class="badge {% if bot.mode == 'live' %}err{% else %}warn{% endif %}">{% if bot.mode == 'live' %}LIVE{% else %}DRY-RUN{% endif %}</span>
+    <span class="badge {% if bot.status == 'running' %}ok{% elif bot.status == 'error' %}err{% endif %}">{{ bot.get_status_display }}</span>
+    <span style="margin-left:auto"></span>
+    {% if pos %}<form class="inline" method="post" action="{% url 'trading:bot_force_exit' bot.pk %}" onsubmit="return confirm('Sell the whole position at market now?')">{% csrf_token %}<button class="btn danger">Force exit</button></form>{% endif %}
+    {% if bot.status == "running" %}<form class="inline" method="post" action="{% url 'trading:bot_stop' bot.pk %}">{% csrf_token %}<button class="btn">Stop bot</button></form>{% endif %}
+    <a class="btn" href="{% url 'trading:control' %}">Control</a>
+  </div>
+  <p class="muted" style="margin-bottom:0">{{ bot.config.coin.pair }} · {{ bot.interval }} · {{ bot.strategy_key }} · started {{ bot.started_at|date:"Y-m-d H:i" }} UTC
+    {% if bot.stopped_at %}· stopped {{ bot.stopped_at|date:"Y-m-d H:i" }}{% endif %}
+    {% if bot.mode == "dry_run" %}· <b>no orders are sent</b>: fills are simulated on Gate.io's live order book{% endif %}</p>
+  {% if bot.last_error %}<p class="err" style="margin-bottom:0">{{ bot.last_error }}</p>{% endif %}
+  {% if control.halted %}<p class="err" style="margin-bottom:0">Kill switch on: {{ control.halted_reason }} — no new entries.</p>{% endif %}
+</div>
+
+<div class="card grid">
+  <div class="stat"><span class="muted">Equity</span><b>{{ equity|floatformat:2 }}</b><span class="muted">start {{ starting|floatformat:0 }}</span></div>
+  <div class="stat"><span class="muted">Return</span><b class="{% if ret_pct >= 0 %}ok{% else %}err{% endif %}">{{ ret_pct|floatformat:2 }}%</b></div>
+  <div class="stat"><span class="muted">Realised P&amp;L (actual fills)</span><b>{{ realised|floatformat:2 }}</b><span class="muted">{{ wins }} / {{ round_trips }} won</span></div>
+  <div class="stat"><span class="muted">Model P&amp;L (engine)</span><b>{{ model_pnl|floatformat:2 }}</b><span class="muted">{{ model_trades }} closed trades</span></div>
+  <div class="stat"><span class="muted">Avg slippage vs decision</span><b>{% if avg_slip is not None %}{{ avg_slip|floatformat:1 }} bps{% else %}—{% endif %}</b></div>
+  <div class="stat"><span class="muted">Fees paid</span><b>{{ fees|floatformat:2 }}</b></div>
+  <div class="stat"><span class="muted">Cash</span><b>{{ cash|floatformat:2 }}</b></div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Position</h3>
+  {% if pos %}
+    <p style="margin:0">Long <b>{{ pos.qty|floatformat:6 }}</b> at <b>{{ pos.avg|floatformat:4 }}</b> · stop <b>{{ pos.stop|floatformat:4 }}</b>{% if pos.target %} · target <b>{{ pos.target|floatformat:4 }}</b>{% endif %}
+      {% if last %}· last {{ last|floatformat:4 }} · unrealised <b class="{% if unreal >= 0 %}ok{% else %}err{% endif %}">{{ unreal|floatformat:2 }}</b>{% endif %}</p>
+    <p class="muted" style="margin-bottom:0">{{ pos.reason }} · the stop and target are checked on every live price tick, and follow the engine's trailing / break-even moves.</p>
+  {% else %}
+    <p class="muted" style="margin:0">Flat.{% if pending %} Engine decision waiting: {{ pending.action }} — {{ pending.reason }}.{% endif %}</p>
+  {% endif %}
+</div>
+
+<div class="card scroll">
+  <h3 style="margin-top:0">Orders</h3>
+  <table>
+    <thead><tr><th>Time (UTC)</th><th>Side</th><th>Status</th><th class="num">Qty</th><th class="num">Decision price</th><th class="num">Fill</th>
+      <th class="num">Slippage</th><th class="num">Fee</th><th class="num">P&amp;L</th><th>Reason</th><th>Id / message</th></tr></thead>
+    <tbody>{% for o in orders %}
+      <tr><td class="mono">{{ o.created_at|date:"m-d H:i:s" }}</td>
+        <td class="{% if o.side == 'buy' %}ok{% else %}err{% endif %}">{{ o.side|upper }}</td>
+        <td><span class="badge {% if o.status == 'filled' %}ok{% elif o.status == 'blocked' %}warn{% else %}err{% endif %}">{{ o.get_status_display }}</span></td>
+        <td class="num">{{ o.filled_qty|default:o.qty|floatformat:6 }}</td><td class="num">{{ o.ref_price|floatformat:4 }}</td>
+        <td class="num">{{ o.avg_price|floatformat:4|default:"—" }}</td>
+        <td class="num">{% if o.slippage_bps is not None %}{{ o.slippage_bps|floatformat:1 }} bps{% else %}—{% endif %}</td>
+        <td class="num">{{ o.fee|floatformat:2 }}</td>
+        <td class="num {% if o.pnl > 0 %}ok{% elif o.pnl < 0 %}err{% endif %}">{{ o.pnl|floatformat:2|default:"" }}</td>
+        <td>{{ o.reason }}</td><td class="mono muted">{{ o.message|default:o.exchange_id|truncatechars:60 }}</td></tr>
+    {% empty %}<tr><td colspan="11" class="muted">No orders yet. The bot acts when its strategy signals on a closed {{ bot.interval }} bar.</td></tr>{% endfor %}</tbody>
+  </table>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Decision price = the last price when the bot decided. Slippage is the fill compared with it (positive = worse).
+    Model P&amp;L is what the engine's simulation made on the same decisions; the gap between the two is the cost of real execution.</p>
+</div>
+{% endblock %}

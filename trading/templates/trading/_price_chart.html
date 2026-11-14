@@ -1,0 +1,66 @@
+{# Price chart with trade markers. Needs context: chart{interval,start,end,coin,live}, trades_json #}
+<div class="card">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+    <b>Price · {{ chart.interval }}</b>
+    <span class="muted" style="font-size:12px">B = entry · exits: T target, S stop, TS trailing, BE break-even, P partial, R ROI, TX time, D day end, X other</span>
+    <span id="pc-status" class="muted mono" style="margin-left:auto"></span>
+  </div>
+  <div id="price-chart" style="height:420px"></div>
+</div>
+{{ trades_json|json_script:"trades-data" }}
+{{ plot_json|default_if_none:""|json_script:"plot-data" }}
+{{ signals_json|default_if_none:""|json_script:"signals-data" }}
+<script>
+(function () {
+  const el = document.getElementById('price-chart'), status = document.getElementById('pc-status');
+  if (!window.LightweightCharts) { status.textContent = 'Chart library failed to load'; return; }
+  const cfg = { interval: "{{ chart.interval }}", start: {{ chart.start }}, end: {% if chart.end %}{{ chart.end }}{% else %}null{% endif %}, live: {{ chart.live|yesno:"true,false" }} };
+  const url = "{% url 'market:candles_json' chart.coin %}";
+  const trades = JSON.parse(document.getElementById('trades-data').textContent);
+  const css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
+  const chart = LightweightCharts.createChart(el, {
+    autoSize: true, layout: { background: { color: v('--card') }, textColor: v('--ink') },
+    grid: { vertLines: { color: v('--line') }, horzLines: { color: v('--line') } },
+    rightPriceScale: { borderColor: v('--line') }, timeScale: { borderColor: v('--line'), timeVisible: true, minBarSpacing: 0.01 },
+  });
+  const series = chart.addCandlestickSeries({ upColor:'#16a34a', downColor:'#dc2626', borderVisible:false, wickUpColor:'#16a34a', wickDownColor:'#dc2626' });
+  const plot = JSON.parse(document.getElementById('plot-data').textContent || '{}') || {};
+  const missed = JSON.parse(document.getElementById('signals-data').textContent || '[]') || [];
+  const PLOT_COLORS = ['#7c3aed', '#0891b2', '#ea580c', '#db2777', '#65a30d', '#ca8a04'];
+  const lines = Object.entries(plot).map(([name, pts], i) => [chart.addLineSeries({ color: PLOT_COLORS[i % PLOT_COLORS.length],
+    lineWidth: 1, lineType: 1, title: name, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }), pts]);
+  let off = 0, last = null, first = null;
+  const code = (r) => ({ target: 'T', stop: 'S', 'day end': 'D', 'trailing stop': 'TS', breakeven: 'BE', 'partial take-profit': 'P', roi: 'R', 'time exit': 'TX' })[r] || 'X';
+  function markers() {
+    const m = [];
+    for (const t of trades) {
+      const e = t.entry_time + off, x = t.exit_time + off;
+      if (first !== null && e >= first && e <= last) m.push({ time: e, position: 'belowBar', color: '#2563eb', shape: 'arrowUp', text: 'B' });
+      if (first !== null && x >= first && x <= last) m.push({ time: x, position: 'aboveBar', color: t.pnl >= 0 ? '#16a34a' : '#dc2626', shape: 'arrowDown', text: code(t.exit_reason) });
+    }
+    for (const s of missed) {  // signals that did not become an order (blocked / ignored)
+      const t = s.time + off;
+      if (first !== null && t >= first && t <= last) m.push({ time: t, position: 'belowBar', color: '#94a3b8', shape: 'circle', text: s.action === 'buy' ? 'b' : 's' });
+    }
+    m.sort((a, b) => a.time - b.time);
+    series.setMarkers(m);
+  }
+  async function load(full) {
+    const q = new URLSearchParams({ interval: cfg.interval });
+    if (full) { q.set('start', cfg.start); if (cfg.end) q.set('end', cfg.end); } else { q.set('since', last - off); }
+    const r = await fetch(url + '?' + q);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    off = d.tz_offset;
+    if (full) for (const [ls, pts] of lines) ls.setData(pts.map(([t, val]) => val == null ? { time: t + off } : { time: t + off, value: val }));
+    const bars = d.candles.map(c => ({ time: c.time + off, open: c.open, high: c.high, low: c.low, close: c.close }));
+    if (full) series.setData(bars); else bars.forEach(b => series.update(b));
+    if (bars.length) { if (full) first = bars[0].time; last = bars[bars.length - 1].time; }
+    markers();
+    if (full) chart.timeScale().fitContent();
+    status.textContent = bars.length || !full ? `${d.pair} · times in ${d.tz}` : 'No candles in range';
+  }
+  load(true).catch(e => status.textContent = 'Chart error: ' + e.message);
+  if (cfg.live) setInterval(() => { if (!document.hidden && last) load(false).catch(() => {}); }, 5000);
+})();
+</script>
