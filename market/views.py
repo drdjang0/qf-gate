@@ -379,8 +379,10 @@ def _num(request, name: str, default: float) -> float:
 
 @login_required
 def screener_page(request):
-    """Shortlist Gate.io spot pairs by liquidity, spread, volatility, price and 24h performance."""
+    """Shortlist spot pairs on one exchange (or all combined) by liquidity, spread, volatility, price and 24h change."""
     d = screener.Filters()
+    choices = screener.exchange_choices()
+    exchange = request.GET.get("exchange") if request.GET.get("exchange") in dict(choices) else "gate"
     f = screener.Filters(
         quote=(request.GET.get("quote") or d.quote).upper()[:10],
         min_volume=_num(request, "min_volume", d.min_volume),
@@ -392,21 +394,30 @@ def screener_page(request):
         min_change_pct=_num(request, "min_change_pct", d.min_change_pct),
         max_change_pct=_num(request, "max_change_pct", d.max_change_pct),
         blacklist=tuple((request.GET.get("blacklist") or "").replace(" ", "").split(",")),
-        sort=request.GET.get("sort") if request.GET.get("sort") in ("volume", "change", "range", "spread") else "volume",
+        sort=request.GET.get("sort") if request.GET.get("sort") in ("volume", "change", "range", "spread", "venues") else "volume",
         limit=int(_num(request, "limit", d.limit)),
+        min_venues=max(1, int(_num(request, "min_venues", d.min_venues))) if exchange == screener.ALL else 1,
     )
-    error, rows, total = "", [], 0
+    error, rows, total, skipped = "", [], 0, {}
     try:
-        everything = screener.all_rows(f.quote)
+        if exchange == screener.ALL:
+            everything, skipped = screener.combined_rows(f.quote)
+        else:
+            everything = screener.exchange_rows(exchange, f.quote)
         total = len(everything)
         rows = screener.screen(everything, f)
     except ExchangeError as exc:
-        error = f"Gate.io unreachable: {exc}"
+        error = f"{dict(choices)[exchange]} unreachable: {exc}"
+    on_gate = None if exchange == "gate" else screener.gate_bases(f.quote)
     have = {(c.gate_currency or c.symbol).upper() for c in Coin.objects.filter(quote=f.quote)}
     for r in rows:
         r["added"] = r["base"] in have
-    return render(request, "market/screener.html", {"f": f, "rows": rows, "total": total, "error": error,
-                                                    "blacklist": ",".join(b for b in f.blacklist if b)})
+        r["on_gate"] = True if exchange == "gate" else (None if on_gate is None else r["base"] in on_gate)
+        r["scan_exchange"] = r.get("lead") or exchange
+    return render(request, "market/screener.html", {
+        "f": f, "rows": rows, "total": total, "error": error, "exchange": exchange, "exchanges": choices,
+        "exchange_name": dict(choices)[exchange], "combined": exchange == screener.ALL, "skipped": skipped,
+        "gap_warn_pct": screener.GAP_WARN_PCT, "blacklist": ",".join(b for b in f.blacklist if b)})
 
 
 @login_required

@@ -199,3 +199,98 @@ def candles(exchange: str, base: str, quote: str, interval: str, start: datetime
 def ticker(exchange: str, base: str, quote: str, session=None) -> dict | None:
     ex = EXCHANGES[exchange]
     return ex.tick(ex.symbol(base.upper(), quote.upper()), session)
+
+
+# -- all tickers at once (Screener) -----------------------------------------------------------------
+# One request per exchange returns every spot pair's 24h stats. Each adapter maps them to:
+# {"base", "last", "bid", "ask", "high", "low", "change_pct", "quote_volume"} (floats or None).
+
+
+def _fl(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _split(sym: str, quote: str, sep: str = "") -> str | None:
+    """Base of `sym` if it is quoted in `quote`, else None (BTCUSDT / BTC-USDT / BTC_USDT)."""
+    suffix = f"{sep}{quote}"
+    if sym.upper().endswith(suffix) and len(sym) > len(suffix):
+        return sym[: -len(suffix)].upper()
+    return None
+
+
+def _tk(base, last, bid, ask, high, low, change_pct, quote_volume) -> dict:
+    return {"base": base, "last": _fl(last), "bid": _fl(bid), "ask": _fl(ask), "high": _fl(high), "low": _fl(low),
+            "change_pct": _fl(change_pct) or 0.0, "quote_volume": _fl(quote_volume) or 0.0}
+
+
+def _pct_from_open(last, open_):
+    last, open_ = _fl(last), _fl(open_)
+    return (last / open_ - 1) * 100 if last and open_ else 0.0
+
+
+def _gate_all(quote, session):
+    rows = _get("https://api.gateio.ws/api/v4/spot/tickers", {}, session) or []
+    return [_tk(b, t.get("last"), t.get("highest_bid"), t.get("lowest_ask"), t.get("high_24h"), t.get("low_24h"),
+                t.get("change_percentage"), t.get("quote_volume"))
+            for t in rows if (b := _split(t.get("currency_pair", ""), quote, "_"))]
+
+
+def _binance_like_all(base_url, pct_is_fraction):
+    def all_(quote, session):
+        rows = _get(f"{base_url}/ticker/24hr", {}, session) or []
+        k = 100 if pct_is_fraction else 1
+        return [_tk(b, t.get("lastPrice"), t.get("bidPrice"), t.get("askPrice"), t.get("highPrice"), t.get("lowPrice"),
+                    (_fl(t.get("priceChangePercent")) or 0) * k, t.get("quoteVolume"))
+                for t in rows if (b := _split(t.get("symbol", ""), quote))]
+    return all_
+
+
+def _bybit_all(quote, session):
+    d = _get("https://api.bybit.com/v5/market/tickers", {"category": "spot"}, session)
+    if not d or d.get("retCode") != 0:
+        return []
+    return [_tk(b, t.get("lastPrice"), t.get("bid1Price"), t.get("ask1Price"), t.get("highPrice24h"), t.get("lowPrice24h"),
+                (_fl(t.get("price24hPcnt")) or 0) * 100, t.get("turnover24h"))
+            for t in d["result"]["list"] if (b := _split(t.get("symbol", ""), quote))]
+
+
+def _kucoin_all(quote, session):
+    d = _get("https://api.kucoin.com/api/v1/market/allTickers", {}, session)
+    if not d or d.get("code") != "200000":
+        return []
+    return [_tk(b, t.get("last"), t.get("buy"), t.get("sell"), t.get("high"), t.get("low"),
+                (_fl(t.get("changeRate")) or 0) * 100, t.get("volValue"))
+            for t in d["data"]["ticker"] if (b := _split(t.get("symbol", ""), quote, "-"))]
+
+
+def _bitget_all(quote, session):
+    d = _get("https://api.bitget.com/api/v2/spot/market/tickers", {}, session)
+    if not d or d.get("code") != "00000":
+        return []
+    return [_tk(b, t.get("lastPr"), t.get("bidPr"), t.get("askPr"), t.get("high24h"), t.get("low24h"),
+                _pct_from_open(t.get("lastPr"), t.get("open")), t.get("quoteVolume"))
+            for t in d["data"] if (b := _split(t.get("symbol", ""), quote))]
+
+
+def _okx_all(quote, session):
+    d = _get("https://www.okx.com/api/v5/market/tickers", {"instType": "SPOT"}, session)
+    if not d or d.get("code") != "0":
+        return []
+    return [_tk(b, t.get("last"), t.get("bidPx"), t.get("askPx"), t.get("high24h"), t.get("low24h"),
+                _pct_from_open(t.get("last"), t.get("open24h")), t.get("volCcy24h"))
+            for t in d["data"] if (b := _split(t.get("instId", ""), quote, "-"))]
+
+
+ALL_TICKERS: dict[str, Callable] = {
+    "gate": _gate_all, "binance": _binance_like_all("https://api.binance.com/api/v3", False),
+    "okx": _okx_all, "bybit": _bybit_all, "kucoin": _kucoin_all,
+    "mexc": _binance_like_all("https://api.mexc.com/api/v3", True), "bitget": _bitget_all,
+}
+
+
+def all_tickers(exchange: str, quote: str, session=None) -> list[dict]:
+    """Every `quote` spot pair's 24h stats on one exchange (one request). Raises ExchangeError if unreachable."""
+    return ALL_TICKERS[exchange](quote.upper(), session)

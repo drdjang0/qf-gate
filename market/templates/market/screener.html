@@ -2,44 +2,62 @@
 {% load market_extras %}
 {% block title %}Screener · QF-gate{% endblock %}
 {% block main_attrs %} style="max-width:1400px"{% endblock %}
+{% block head %}<style>
+  .venues { display:flex; flex-wrap:wrap; gap:3px; }
+  .venues span { font-size:11px; border:1px solid var(--line); border-radius:99px; padding:0 6px; white-space:nowrap; }
+  .venues span.lead { font-weight:600; }
+</style>{% endblock %}
 {% block content %}
 <div class="card">
-  <h2 style="margin-top:0">Coin screener <span class="muted" style="font-size:14px">Gate.io spot, 24h data, refreshed every 30 s</span></h2>
+  <h2 style="margin-top:0">Coin screener <span class="muted" style="font-size:14px">{{ exchange_name }} spot, 24h data, refreshed every 30 s</span></h2>
   <form method="get" id="sf" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+    <p><label>Exchange</label><select name="exchange" style="width:auto" onchange="this.form.submit()">
+      {% for k, name in exchanges %}<option value="{{ k }}"{% if k == exchange %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></p>
     <p><label>Quote</label><input type="text" name="quote" value="{{ f.quote }}" style="width:80px"></p>
-    <p><label>Min 24h volume ({{ f.quote }})</label><input type="number" name="min_volume" value="{{ f.min_volume|floatformat:0 }}" step="any" style="width:140px"></p>
+    <p><label>Min 24h volume ({{ f.quote }}){% if combined %}, all venues{% endif %}</label><input type="number" name="min_volume" value="{{ f.min_volume|floatformat:0 }}" step="any" style="width:140px"></p>
     <p><label>Max spread %</label><input type="number" name="max_spread_pct" value="{{ f.max_spread_pct }}" step="any" style="width:90px"></p>
     <p><label>24h range % (min–max)</label><span style="display:flex;gap:4px"><input type="number" name="min_range_pct" value="{{ f.min_range_pct }}" step="any" style="width:70px"><input type="number" name="max_range_pct" value="{{ f.max_range_pct }}" step="any" style="width:80px"></span></p>
     <p><label>Price (min–max, 0 = any)</label><span style="display:flex;gap:4px"><input type="number" name="min_price" value="{{ f.min_price }}" step="any" style="width:90px"><input type="number" name="max_price" value="{{ f.max_price }}" step="any" style="width:90px"></span></p>
     <p><label>24h change % (min–max)</label><span style="display:flex;gap:4px"><input type="number" name="min_change_pct" value="{{ f.min_change_pct }}" step="any" style="width:70px"><input type="number" name="max_change_pct" value="{{ f.max_change_pct }}" step="any" style="width:80px"></span></p>
+    {% if combined %}<p><label>Listed on at least (exchanges)</label><input type="number" name="min_venues" value="{{ f.min_venues }}" min="1" max="{{ exchanges|length }}" style="width:70px"></p>{% endif %}
     <p><label>Blacklist (comma)</label><input type="text" name="blacklist" id="bl" value="{{ blacklist }}" placeholder="e.g. USDC,FDUSD" style="width:180px"></p>
     <p><label>Sort</label><select name="sort" style="width:auto">
       <option value="volume"{% if f.sort == "volume" %} selected{% endif %}>Volume</option>
       <option value="change"{% if f.sort == "change" %} selected{% endif %}>24h change</option>
       <option value="range"{% if f.sort == "range" %} selected{% endif %}>Volatility (range)</option>
-      <option value="spread"{% if f.sort == "spread" %} selected{% endif %}>Tightest spread</option></select></p>
+      <option value="spread"{% if f.sort == "spread" %} selected{% endif %}>Tightest spread</option>
+      {% if combined %}<option value="venues"{% if f.sort == "venues" %} selected{% endif %}>Most exchanges</option>{% endif %}</select></p>
     <p><label>Show</label><input type="number" name="limit" value="{{ f.limit }}" min="1" max="500" style="width:70px"></p>
     <p><button class="btn primary">Apply</button></p>
   </form>
   {% if error %}<p class="err">{{ error }}</p>{% endif %}
-  <p class="muted" style="font-size:12px;margin-bottom:0">{{ rows|length }} of {{ total }} {{ f.quote }} pairs match. A shortlist only: adding a coin still
-    verifies it by chain + contract address. Your blacklist is remembered in this browser.</p>
+  {% if skipped %}<p class="warn" style="font-size:13px">Skipped (unreachable): {% for name, e in skipped.items %}{{ name }} ({{ e }}){% if not forloop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
+  <p class="muted" style="font-size:12px;margin-bottom:0">{{ rows|length }} of {{ total }} {{ f.quote }} {% if combined %}tickers (merged across exchanges){% else %}pairs{% endif %} match.
+    {% if combined %}Volume is summed over every venue; price, change, spread and range come from the venue with the most volume (bold).
+    A ticker is not an identity: a price gap over {{ gap_warn_pct|floatformat:0 }}% between venues usually means different coins share it.{% endif %}
+    {% if exchange != "gate" %}Coins are added and traded on Gate.io, so "Add coin" appears only for tickers Gate.io lists.{% endif %}
+    A shortlist only: adding a coin still verifies it by chain + contract address. Your blacklist is remembered in this browser.</p>
 </div>
 
 <div class="card scroll">
   <table>
     <thead><tr><th>#</th><th>Pair</th><th class="num">Last</th><th class="num">24h change</th><th class="num">24h volume ({{ f.quote }})</th>
-      <th class="num">Spread</th><th class="num">24h range</th><th></th></tr></thead>
+      <th class="num">Spread</th><th class="num">24h range</th>{% if combined %}<th>Exchanges (volume share)</th><th class="num">Price gap</th>{% endif %}<th></th></tr></thead>
     <tbody>{% for r in rows %}
-      <tr><td class="muted">{{ forloop.counter }}</td><td class="mono"><b>{{ r.base }}</b>_{{ f.quote }}</td>
+      <tr><td class="muted">{{ forloop.counter }}</td><td class="mono"><b>{{ r.base }}</b>/{{ f.quote }}</td>
         <td class="num mono">{{ r.last|fprice }}</td>
         <td class="num {% if r.change_pct >= 0 %}ok{% else %}err{% endif %}">{% if r.change_pct > 0 %}+{% endif %}{{ r.change_pct|floatformat:2 }}%</td>
         <td class="num">{{ r.volume|floatformat:0 }}</td>
         <td class="num">{{ r.spread_pct|floatformat:3 }}%</td>
         <td class="num">{{ r.range_pct|floatformat:1 }}%</td>
-        <td><a class="btn" href="{% url 'market:scanner' %}?symbol={{ r.base }}&quote={{ f.quote }}">Scan</a>
-          {% if r.added %}<span class="badge ok">added</span>{% else %}<a class="btn" href="{% url 'market:coin_create' %}?symbol={{ r.base }}&gate_currency={{ r.base }}&quote={{ f.quote }}">Add coin</a>{% endif %}</td></tr>
-    {% empty %}<tr><td colspan="8" class="muted">No pairs match these filters.</td></tr>{% endfor %}</tbody>
+        {% if combined %}<td><div class="venues">{% for v in r.venues %}<span class="{% if forloop.first %}lead{% endif %}" title="last {{ v.last|fprice }}">{{ v.name }} {{ v.share_pct|floatformat:0 }}%</span>{% endfor %}</div></td>
+          <td class="num {% if r.gap_warn %}err{% endif %}"{% if r.gap_warn %} title="Venues disagree a lot: check it is the same coin"{% endif %}>{% if r.venue_count > 1 %}{{ r.price_gap_pct|floatformat:2 }}%{% if r.gap_warn %} ⚠{% endif %}{% else %}<span class="muted">–</span>{% endif %}</td>{% endif %}
+        <td style="white-space:nowrap"><a class="btn" href="{% url 'market:scanner' %}?symbol={{ r.base }}&quote={{ f.quote }}&exchange={{ r.scan_exchange }}">Scan</a>
+          {% if r.added %}<span class="badge ok">added</span>
+          {% elif r.on_gate %}<a class="btn" href="{% url 'market:coin_create' %}?symbol={{ r.base }}&gate_currency={{ r.base }}&quote={{ f.quote }}">Add coin</a>
+          {% elif r.on_gate is None %}<span class="badge warn" title="Gate.io could not be reached to check">Gate.io ?</span>
+          {% else %}<span class="badge" title="Coins are added and traded on Gate.io">not on Gate.io</span>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="{% if combined %}10{% else %}8{% endif %}" class="muted">No pairs match these filters.</td></tr>{% endfor %}</tbody>
   </table>
 </div>
 <script>
