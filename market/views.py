@@ -22,7 +22,7 @@ from .exchanges.base import ExchangeError
 from .exchanges.gate import get_client
 from .forms import CoinForm
 from .models import Coin, Job
-from .services import chart, compare, gaps, jobs, live, screener, zones
+from .services import chart, coininfo, compare, gaps, jobs, live, screener, zones
 from .services.history import daily_history, summarize
 from .services.export import build_workbook, build_zones_workbook
 from .services.levels import levels_with_previous
@@ -57,6 +57,14 @@ class _CoinFormMixin(LoginRequiredMixin):
 
 
 class CoinCreateView(_CoinFormMixin, CreateView):
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        try:
+            coininfo.enrich(self.object)  # icon, exchanges, chains: best effort, never blocks the save
+        except Exception:  # noqa: BLE001
+            pass
+        return response
+
     def get_initial(self):
         initial = super().get_initial()
         for k in ("symbol", "gate_currency", "quote"):
@@ -416,3 +424,38 @@ def compare_page(request, pk: int):
         error = str(exc)
     return render(request, "market/compare.html", {"coin": coin, "r": result, "error": error, "days": days,
                                                    "max_diff": compare.MAX_MEDIAN_DIFF_PCT})
+
+
+@login_required
+@require_GET
+def coin_autofill(request):
+    """JSON for the Add-coin form: Gate.io identity (primary chain, contract, all chains) + CoinGecko details."""
+    symbol = (request.GET.get("symbol") or "").strip().upper()[:32]
+    quote = (request.GET.get("quote") or settings.MARKET["DEFAULT_QUOTE"]).strip().upper()[:16]
+    if not symbol:
+        return JsonResponse({"found": False, "error": "Enter a symbol"}, status=400)
+    try:
+        info = coininfo.autofill(symbol, quote)
+    except ExchangeError as exc:
+        return JsonResponse({"found": False, "error": f"Gate.io unreachable: {exc}"}, status=502)
+    have = Coin.objects.filter(gate_currency=info.get("symbol", symbol), quote=quote).first()
+    info["existing"] = reverse("market:coin_detail", args=[have.pk]) if have else None
+    return JsonResponse(info)
+
+
+@login_required
+@require_POST
+def coin_enrich(request, pk: int):
+    coin = get_object_or_404(Coin, pk=pk)
+    try:
+        ok = coininfo.enrich(coin)
+    except ExchangeError as exc:
+        messages.error(request, f"Gate.io unreachable: {exc}")
+        return redirect("market:coin_detail", pk=pk)
+    if ok and coin.image_url:
+        messages.success(request, f"Details refreshed: {len(coin.exchanges)} exchanges, {len(coin.chains)} chains.")
+    elif ok:
+        messages.warning(request, "Gate.io details refreshed; CoinGecko had no match or is rate-limiting (try later).")
+    else:
+        messages.error(request, "Gate.io does not list this coin.")
+    return redirect("market:coin_detail", pk=pk)

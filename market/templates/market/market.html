@@ -41,6 +41,7 @@
 {% endblock %}
 {% block content %}
 <div class="card ticker">
+  {% if coin.image_url %}<img src="{{ coin.image_url }}" alt="" width="28" height="28" style="border-radius:50%">{% endif %}
   <select id="coin-pick" aria-label="Coin">{% for c in coins %}<option value="{% url 'market:market_page' c.pk %}"{% if c.pk == coin.pk %} selected{% endif %}>{{ c.pair }}</option>{% endfor %}</select>
   <div><span class="big" id="t-last">—</span> <span id="t-chg" class="v"></span></div>
   <div><span class="k">24h high</span><span class="v" id="t-high">—</span></div>

@@ -5,6 +5,7 @@
 {% block content %}
 <div class="card">
   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    {% if coin.image_url %}<img src="{{ coin.image_url }}" alt="" width="32" height="32" style="border-radius:50%">{% endif %}
     <h2 style="margin:0">{{ coin.symbol }} <span class="muted">{{ coin.name }}</span></h2>
     <span class="mono">{{ coin.pair }}</span>
     <span style="margin-left:auto"></span>
@@ -16,6 +17,7 @@
     <a class="btn" href="{% url 'market:market_page' coin.pk %}">Market view</a>
     <a class="btn" href="{% url 'market:compare_page' coin.pk %}">Compare exchanges</a>
     <a class="btn" href="{% url 'market:export_levels' %}?coin={{ coin.pk }}">Export Excel</a>
+    <form class="inline" method="post" action="{% url 'market:coin_enrich' coin.pk %}">{% csrf_token %}<button class="btn" title="Icon, chains and exchanges from Gate.io + CoinGecko">Refresh details</button></form>
     <a class="btn" href="{% url 'market:coin_update' coin.pk %}">Edit</a>
   </div>
   <p class="muted" style="margin-bottom:0">
@@ -24,6 +26,14 @@
     {% if coin.verified_at %}<span class="ok">verified {{ coin.verified_at|date:"Y-m-d H:i" }}</span>{% else %}<span class="err">not verified</span>{% endif %}
     {% if coin.verification_note %}— {{ coin.verification_note }}{% endif %}
   </p>
+  {% if coin.exchanges or coin.chains %}
+  <details style="margin-top:6px"><summary class="muted">{% if coin.exchanges %}Listed on {{ coin.exchanges|length }} exchange{{ coin.exchanges|length|pluralize }}{% endif %}{% if coin.exchanges and coin.chains %} · {% endif %}{% if coin.chains %}{{ coin.chains|length }} chain{{ coin.chains|length|pluralize }} on Gate.io{% endif %}</summary>
+    {% if coin.exchanges %}<p style="margin:6px 0">{% for x in coin.exchanges %}<span class="badge" style="margin:2px">{{ x }}</span>{% endfor %}</p>{% endif %}
+    {% if coin.chains %}<table style="width:auto"><tbody>{% for c in coin.chains %}<tr><td><b>{{ c.chain }}</b>{% if c.chain == coin.chain %} <span class="badge ok">this coin</span>{% endif %}</td>
+      <td class="mono muted">{{ c.contract|default:"native" }}</td><td>{% if c.withdraw_disabled or c.deposit_disabled %}<span class="badge warn">deposits/withdrawals off</span>{% endif %}</td></tr>{% endfor %}</tbody></table>{% endif %}
+    <p class="muted" style="font-size:12px;margin-bottom:0">Exchanges from CoinGecko{% if coin.coingecko_id %} ({{ coin.coingecko_id }}){% endif %}; chains from Gate.io.</p>
+  </details>
+  {% endif %}
   {% if active_job %}<p class="warn" style="margin-bottom:0">{{ active_job.get_kind_display }} {{ active_job.status }} since {{ active_job.created_at|date:"H:i:s" }} UTC — <a href="{% url 'market:job_list' %}?coin={{ coin.pk }}">jobs</a></p>{% endif %}
 </div>
 

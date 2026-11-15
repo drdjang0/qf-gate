@@ -1,16 +1,40 @@
 {% extends "base.html" %}
 {% block title %}{% if object %}Edit {{ object.symbol }}{% else %}Add coin{% endif %} · QF-gate{% endblock %}
+{% block head %}<style>
+  .af { display:none; border:1px solid var(--line); border-radius:8px; padding:12px; margin:0 0 16px; }
+  .af-head { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .af-head img { width:40px; height:40px; border-radius:50%; }
+  .chains { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:6px; margin-top:8px; }
+  .chains label { display:flex; gap:6px; align-items:flex-start; font-weight:400; border:1px solid var(--line); border-radius:6px; padding:6px 8px; cursor:pointer; }
+  .chains label.off { opacity:.55; }
+  .chains .mono { word-break:break-all; }
+  .ex { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+  .ex span { font-size:12px; border:1px solid var(--line); border-radius:99px; padding:1px 8px; }
+</style>{% endblock %}
 {% block content %}
 <div class="card">
   <h2>{% if object %}Edit {{ object.symbol }}{% else %}Add coin{% endif %}</h2>
-  <p class="muted">The coin is identified by <b>chain + contract address</b>, not by its ticker.
-    Paste the contract address and press <i>Look up on Gate.io</i> to fill the rest.
-    Native coins (BTC, ETH, SOL…) have no contract: leave it blank and set the chain to the coin's own chain.</p>
-  <p>
-    <button type="button" class="btn" id="lookup">Look up on Gate.io</button>
-    <span id="lookup-result" class="muted"></span>
+  <p class="muted">Type the symbol and press <b>Fetch details</b>: name, chain and contract come from Gate.io (the coin's own primary
+    chain), the icon and the exchanges listing it from CoinGecko. On save the chain + contract are still verified against Gate.io,
+    so a look-alike ticker can't slip in.</p>
+  <p style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <button type="button" class="btn primary" id="fetch">Fetch details</button>
+    <button type="button" class="btn" id="lookup" title="Already have a contract address? Find which Gate.io currency it is">Look up a contract address</button>
+    <span id="status" class="muted"></span>
   </p>
-  <form method="post">
+
+  <div class="af" id="af">
+    <div class="af-head">
+      <img id="af-icon" alt="" hidden>
+      <div><b id="af-name"></b> <span class="mono muted" id="af-pair"></span><br><span id="af-trade" class="muted"></span></div>
+      <a class="btn" id="af-existing" hidden>Already added: open it</a>
+    </div>
+    <div style="margin-top:10px"><b>Chain</b> <span class="muted">(Gate.io's primary chain is selected; pick another only if you hold the token there)</span></div>
+    <div class="chains" id="af-chains"></div>
+    <div style="margin-top:10px"><b>Listed on</b> <span class="muted" id="af-excount"></span><div class="ex" id="af-ex"></div></div>
+  </div>
+
+  <form method="post" id="coin-form">
     {% csrf_token %}
     {{ form.as_p }}
     <button class="btn primary" type="submit">Save</button>
@@ -19,28 +43,82 @@
 </div>
 <script>
 (function () {
-  const btn = document.getElementById('lookup');
-  const out = document.getElementById('lookup-result');
   const $ = (n) => document.getElementById('id_' + n);
-  btn.addEventListener('click', async () => {
+  const el = (id) => document.getElementById(id);
+  const status = el('status');
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function pickChain(chain, contract) {
+    $('chain').value = chain;
+    $('contract_address').value = contract || '';
+  }
+
+  function show(d) {
+    const g = d.gate, cg = d.coingecko;
+    el('af').style.display = 'block';
+    if (cg && cg.image) { el('af-icon').src = cg.image; el('af-icon').hidden = false; } else { el('af-icon').hidden = true; }
+    el('af-name').textContent = `${g.name || d.symbol} (${g.currency})`;
+    el('af-pair').textContent = g.pair;
+    el('af-trade').innerHTML = g.pair_status === 'tradable' ? '<span class="ok">trading on Gate.io</span>'
+      : g.pair_status ? `<span class="warn">Gate.io pair status: ${esc(g.pair_status)}</span>`
+      : `<span class="err">no ${esc(g.pair)} pair on Gate.io</span>`;
+    if (g.delisted) el('af-trade').innerHTML += ' · <span class="err">delisted</span>';
+    if (d.existing) { el('af-existing').href = d.existing; el('af-existing').hidden = false; } else el('af-existing').hidden = true;
+    el('af-chains').innerHTML = g.chains.map((c, i) => {
+      const off = c.withdraw_disabled || c.deposit_disabled;
+      return `<label class="${off ? 'off' : ''}"><input type="radio" name="af-chain" value="${i}"${c.chain === g.chain ? ' checked' : ''}>
+        <span><b>${esc(c.chain)}</b>${c.chain === g.chain ? ' <span class="badge ok">primary</span>' : ''}${off ? ' <span class="badge warn">deposits/withdrawals off</span>' : ''}<br>
+        <span class="mono muted">${c.contract ? esc(c.contract) : 'native coin (no contract)'}</span></span></label>`;
+    }).join('');
+    el('af-chains').querySelectorAll('input').forEach(r => r.addEventListener('change', () => {
+      const c = g.chains[Number(r.value)];
+      pickChain(c.chain, c.contract);
+    }));
+    if (cg) {
+      el('af-excount').textContent = `(${cg.exchange_count} on CoinGecko${cg.exchange_count > cg.exchanges.length ? ', first ' + cg.exchanges.length + ' shown' : ''})`;
+      el('af-ex').innerHTML = cg.exchanges.map(x => `<span>${esc(x)}</span>`).join('');
+    } else {
+      el('af-excount').textContent = '(CoinGecko has no match or is busy right now; the coin can still be added)';
+      el('af-ex').innerHTML = '';
+    }
+    $('symbol').value = $('symbol').value || g.currency;
+    $('name').value = $('name').value || g.name || '';
+    $('gate_currency').value = g.currency;
+    pickChain(g.chain, g.contract);
+  }
+
+  async function fetchDetails() {
+    const symbol = ($('gate_currency').value || $('symbol').value).trim();
+    if (!symbol) { status.textContent = 'Type a symbol first (e.g. SOL).'; return; }
+    status.textContent = `Fetching ${symbol.toUpperCase()}…`;
+    try {
+      const q = new URLSearchParams({ symbol, quote: $('quote').value || 'USDT' });
+      const r = await fetch('{% url "market:coin_autofill" %}?' + q);
+      const d = await r.json();
+      if (!r.ok || !d.found) { status.textContent = d.error || 'Not found'; el('af').style.display = 'none'; return; }
+      show(d);
+      status.textContent = 'Filled in. Check the chain, then Save.';
+    } catch (e) { status.textContent = 'Fetch failed: ' + e; }
+  }
+
+  el('fetch').addEventListener('click', fetchDetails);
+  $('symbol').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('gate_currency').value = ''; fetchDetails(); } });
+
+  el('lookup').addEventListener('click', async () => {
     const address = $('contract_address').value.trim();
-    if (!address) { out.textContent = 'Paste a contract address first.'; return; }
-    out.textContent = 'Looking up…';
+    if (!address) { status.textContent = 'Paste a contract address in the form first.'; return; }
+    status.textContent = 'Looking up…';
     try {
       const r = await fetch('{% url "market:contract_lookup" %}?address=' + encodeURIComponent(address));
       const data = await r.json();
-      if (!r.ok) { out.textContent = data.error || 'Lookup failed'; return; }
-      if (!data.matches.length) { out.textContent = 'No Gate.io currency lists this contract.'; return; }
-      out.textContent = data.matches.map(m => `${m.currency} (${m.name}) on ${m.chain}${m.delisted ? ' [delisted]' : ''}`).join(' | ');
-      if (data.matches.length === 1) {
-        const m = data.matches[0];
-        if (!$('symbol').value) $('symbol').value = m.currency;
-        if (!$('name').value) $('name').value = m.name;
-        $('chain').value = m.chain;
-        $('gate_currency').value = m.currency;
-      }
-    } catch (e) { out.textContent = 'Lookup failed: ' + e; }
+      if (!r.ok) { status.textContent = data.error || 'Lookup failed'; return; }
+      if (!data.matches.length) { status.textContent = 'No Gate.io currency lists this contract.'; return; }
+      status.textContent = data.matches.map(m => `${m.currency} (${m.name}) on ${m.chain}${m.delisted ? ' [delisted]' : ''}`).join(' | ');
+      if (data.matches.length === 1) { $('gate_currency').value = data.matches[0].currency; fetchDetails(); }
+    } catch (e) { status.textContent = 'Lookup failed: ' + e; }
   });
+
+  {% if not object %}if ($('symbol').value || $('gate_currency').value) fetchDetails();  // e.g. arriving from the screener{% endif %}
 })();
 </script>
 {% endblock %}

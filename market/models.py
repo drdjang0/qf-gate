@@ -77,6 +77,11 @@ class Coin(models.Model):
     quote = models.CharField(max_length=16, default="USDT")
     is_active = models.BooleanField(default=True, help_text="Inactive coins are not synced or streamed.")
     notes = models.TextField(blank=True)
+    # filled automatically (services/coininfo.py): CoinGecko icon / id / exchanges, Gate.io chains
+    image_url = models.CharField(max_length=300, blank=True)
+    coingecko_id = models.CharField(max_length=100, blank=True)
+    exchanges = models.JSONField(default=list, blank=True, help_text="Exchanges listing the coin (CoinGecko)")
+    chains = models.JSONField(default=list, blank=True, help_text="Chains Gate.io supports, with contracts")
 
     verified_at = models.DateTimeField(null=True, blank=True)
     verification_note = models.CharField(max_length=255, blank=True)
