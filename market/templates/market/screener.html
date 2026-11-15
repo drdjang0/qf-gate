@@ -37,7 +37,8 @@
         <td class="num">{{ r.volume|floatformat:0 }}</td>
         <td class="num">{{ r.spread_pct|floatformat:3 }}%</td>
         <td class="num">{{ r.range_pct|floatformat:1 }}%</td>
-        <td>{% if r.added %}<span class="badge ok">added</span>{% else %}<a class="btn" href="{% url 'market:coin_create' %}?symbol={{ r.base }}&gate_currency={{ r.base }}&quote={{ f.quote }}">Add coin</a>{% endif %}</td></tr>
+        <td><a class="btn" href="{% url 'market:scanner' %}?symbol={{ r.base }}&quote={{ f.quote }}">Scan</a>
+          {% if r.added %}<span class="badge ok">added</span>{% else %}<a class="btn" href="{% url 'market:coin_create' %}?symbol={{ r.base }}&gate_currency={{ r.base }}&quote={{ f.quote }}">Add coin</a>{% endif %}</td></tr>
     {% empty %}<tr><td colspan="8" class="muted">No pairs match these filters.</td></tr>{% endfor %}</tbody>
   </table>
 </div>

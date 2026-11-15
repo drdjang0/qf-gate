@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% load market_extras %}
+{% block title %}{% if symbol %}{{ symbol }} scan{% else %}Scanner{% endif %} · QF-gate{% endblock %}
+{% block main_attrs %} style="max-width:1500px"{% endblock %}
+{% block head %}<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  .bar { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:flex-end; }
+  .bar p { margin:0; }
+  .bar input, .bar select { width:auto; }
+  .seg a { display:inline-block; padding:4px 10px; border-right:1px solid var(--line); text-decoration:none; color:var(--ink); }
+  .seg a:last-child { border-right:0; }
+  .seg a.active { background:var(--accent); color:#fff; }
+  .up { color:#16a34a; } .down { color:#dc2626; }
+  .hm { border-collapse:separate; border-spacing:1px; width:auto; }
+  .hm td, .hm th { padding:0; border:0; height:15px; }
+  .hm td.c { width:9px; min-width:9px; border-radius:2px; background:var(--line); }
+  .hm th.p { padding:0 8px 0 0; font-size:11px; text-align:right; text-transform:none; letter-spacing:0; font-weight:400; }
+  .hm tr.now th.p { color:var(--accent); font-weight:700; }
+  #scan-chart { height:440px; }
+</style>{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">Scanner <span class="muted" style="font-size:14px">analyse any coin on any exchange, nothing is stored</span></h2>
+  <form method="get" class="bar">
+    <p><label>Coin</label><input type="text" name="symbol" value="{{ symbol }}" placeholder="e.g. SOL" style="width:110px" autofocus></p>
+    <p><label>Quote</label><input type="text" name="quote" value="{{ quote }}" style="width:80px"></p>
+    <p><label>Exchange</label><select name="exchange">{% for k, n in exchanges %}<option value="{{ k }}"{% if k == exchange %} selected{% endif %}>{{ n }}</option>{% endfor %}</select></p>
+    <p><label>Period</label><select name="days">{% for d, label in periods %}<option value="{{ d }}"{% if d == days %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></p>
+    <p><label>Zone ±%</label><input type="number" name="width" value="{{ width }}" min="0.1" max="5" step="0.1" style="width:80px"></p>
+    <p><button class="btn primary">Scan</button></p>
+  </form>
+  {% if symbol %}<div class="seg" style="margin-top:10px">{% for d, label in periods %}<a href="?symbol={{ symbol }}&quote={{ quote }}&exchange={{ exchange }}&days={{ d }}&width={{ width }}"{% if d == days %} class="active"{% endif %}>{{ label }}</a>{% endfor %}</div>{% endif %}
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+</div>
+
+{% if r and not r.listed %}<div class="card warn">{{ r.exchange_name }} does not list {{ symbol }}/{{ quote }}. Check "Where it trades" below for another exchange.</div>{% endif %}
+
+{% if r and r.stats %}
+<div class="card">
+  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+    <h3 style="margin:0">{{ r.base }}/{{ r.quote }} <span class="muted">· {{ r.exchange_name }} · {{ r.label }} · {{ r.interval }} candles</span></h3>
+    <span style="margin-left:auto"></span>
+    {% if existing %}<a class="btn" href="{% url 'market:market_page' existing.pk %}">Already monitored: open Market</a>
+    {% elif on_gate %}<a class="btn primary" href="{% url 'market:coin_create' %}?symbol={{ symbol }}&gate_currency={{ symbol }}&quote={{ quote }}" title="Stored 1m history, live feed, Market / Zones pages, strategies">Add for monitoring</a>
+    {% else %}<span class="badge warn" title="Monitoring, history and trading run on Gate.io">not on Gate.io: can't be monitored yet</span>{% endif %}
+  </div>
+  <div class="grid" style="margin-top:12px">
+    <div class="stat"><span class="muted">Last</span><b class="mono">{{ r.stats.last|fprice }}</b></div>
+    <div class="stat"><span class="muted">Change over period</span><b class="{% if r.stats.change_pct >= 0 %}up{% else %}down{% endif %}">{% if r.stats.change_pct > 0 %}+{% endif %}{{ r.stats.change_pct|floatformat:2 }}%</b></div>
+    <div class="stat"><span class="muted">Range (low → high)</span><b>{{ r.stats.range_pct|floatformat:1 }}%</b><span class="muted mono">{{ r.stats.low|fprice }} → {{ r.stats.high|fprice }}</span></div>
+    <div class="stat"><span class="muted">Price in range</span><b>{{ r.stats.pos_in_range_pct|floatformat:0 }}%</b><span class="muted">0 = at the low, 100 = at the high</span></div>
+    <div class="stat"><span class="muted">Volume ({{ r.quote }})</span><b>{{ r.stats.volume|floatformat:0 }}</b></div>
+    <div class="stat"><span class="muted">Zones held (of held + broke)</span><b>{% if r.stats.held_pct is not None %}{{ r.stats.held_pct|floatformat:0 }}%{% else %}—{% endif %}</b><span class="muted">{{ r.stats.touches }} touches, {{ r.stats.zones }} zones</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div id="scan-chart"></div>
+  <p class="muted" style="font-size:12px;margin:6px 0 0">Times in UTC. Coloured lines: the hotspot bands below (#1 strongest). Fetched live from {{ r.exchange_name }}, cached for 2 minutes.</p>
+</div>
+{{ bars_json|json_script:"scan-bars" }}{{ bands_json|json_script:"scan-bands" }}
+<script>
+(function () {
+  if (!window.LightweightCharts) return;
+  const css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
+  const chart = LightweightCharts.createChart(document.getElementById('scan-chart'), { autoSize: true,
+    layout: { background: { color: v('--card') }, textColor: v('--ink') },
+    grid: { vertLines: { color: v('--line') }, horzLines: { color: v('--line') } },
+    timeScale: { timeVisible: true, minBarSpacing: 0.01 } });
+  const s = chart.addCandlestickSeries({ upColor:'#16a34a', downColor:'#dc2626', borderVisible:false, wickUpColor:'#16a34a', wickDownColor:'#dc2626' });
+  const bars = JSON.parse(JSON.parse(document.getElementById('scan-bars').textContent));
+  s.setData(bars);
+  const last = bars[bars.length - 1].close;
+  const p = Math.min(10, Math.max(2, 4 - Math.floor(Math.log10(last))));
+  s.applyOptions({ priceFormat: { type: 'price', precision: p, minMove: Math.pow(10, -p) } });
+  const COLORS = ['#7c3aed', '#0891b2', '#ea580c', '#db2777', '#65a30d', '#0d9488', '#9333ea', '#ca8a04'];
+  JSON.parse(JSON.parse(document.getElementById('scan-bands').textContent)).forEach((b, i) => {
+    const color = COLORS[i % COLORS.length];
+    s.createPriceLine({ price: b.upper, color, lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: b.title });
+    s.createPriceLine({ price: b.lower, color, lineWidth: 1, lineStyle: 1, axisLabelVisible: false, title: '' });
+  });
+  chart.timeScale().fitContent();
+})();
+</script>
+{% endif %}
+
+{% if where %}
+<div class="card scroll">
+  <h3 style="margin-top:0">Where it trades <span class="muted" style="font-size:13px">{{ symbol }}/{{ quote }}, last 24 h</span></h3>
+  <table>
+    <thead><tr><th>Exchange</th><th class="num">Last</th><th class="num">vs median</th><th class="num">24h change</th><th class="num">24h volume ({{ quote }})</th><th class="num">Volume share</th><th></th></tr></thead>
+    <tbody>{% for w in where %}
+      <tr{% if not w.listed %} class="muted"{% endif %}><td><b>{{ w.name }}</b></td>
+        {% if w.listed %}
+          <td class="num mono">{{ w.last|fprice }}</td>
+          <td class="num {% if w.vs_median_pct > 0.5 or w.vs_median_pct < -0.5 %}warn{% endif %}">{% if w.vs_median_pct > 0 %}+{% endif %}{{ w.vs_median_pct|floatformat:2 }}%</td>
+          <td class="num {% if w.change_pct >= 0 %}up{% else %}down{% endif %}">{{ w.change_pct|floatformat:2 }}%</td>
+          <td class="num">{{ w.quote_volume|floatformat:0 }}</td><td class="num">{{ w.volume_share_pct|floatformat:1 }}%</td>
+          <td><a class="btn" href="?symbol={{ symbol }}&quote={{ quote }}&exchange={{ w.key }}&days={{ days }}&width={{ width }}">Scan here</a></td>
+        {% elif w.listed is None %}<td colspan="6">unreachable from here: {{ w.error }}</td>
+        {% else %}<td colspan="6">not listed</td>{% endif %}
+      </tr>{% endfor %}</tbody>
+  </table>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Matched by ticker on each exchange (most publish no contract addresses): a price far from the median
+    usually means a different token with the same ticker. Adding a coin for monitoring verifies it by chain + contract on Gate.io.</p>
+</div>
+{% endif %}
+
+{% if r and r.stats %}
+<div class="card scroll">
+  <h3 style="margin-top:0">Hotspots · where price kept coming back <span class="muted" style="font-size:13px">forward-only, ±{{ r.width_pct }}%</span></h3>
+  <table>
+    <thead><tr><th>#</th><th class="num">Band</th><th class="num">Bars returned</th><th class="num">Held</th><th class="num">Broke</th><th class="num">Highs / lows here</th><th>First formed</th><th class="num">From price now</th></tr></thead>
+    <tbody>{% for h in r.hotspots %}
+      <tr{% if h.here %} style="background:rgba(37,99,235,.08)"{% endif %}><td>#{{ forloop.counter }}</td>
+        <td class="num mono">{{ h.lower|fprice }} – {{ h.upper|fprice }}</td><td class="num"><b>{{ h.touches }}</b></td>
+        <td class="num up">{{ h.held }}</td><td class="num down">{{ h.broke }}</td><td class="num">{{ h.highs }} / {{ h.lows }}</td>
+        <td class="mono">{{ h.formed|date:"m-d H:i" }}</td>
+        <td class="num">{% if h.here %}price is here{% else %}{% if h.dist > 0 %}+{% endif %}{{ h.dist|floatformat:2 }}%{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="8" class="muted">Price hasn't returned to any zone in this period.</td></tr>{% endfor %}</tbody>
+  </table>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Each {{ r.interval }} bar's high and low is a zone. Only later bars count as returns (no hindsight), counted once per bar;
+    held / broke is judged on the bar's close against where price came from.</p>
+</div>
+
+{% if r.heatmap %}
+<div class="card scroll">
+  <h3 style="margin-top:0">Heatmap · zone touches per bar and price band</h3>
+  <table class="hm"><tbody>
+    {% for row in r.heatmap.rows %}<tr{% if r.stats.last >= row.lower and r.stats.last < row.upper %} class="now"{% endif %}>
+      <th class="p mono">{{ row.lower|fprice }}{% if r.stats.last >= row.lower and r.stats.last < row.upper %} ◀{% endif %}</th>
+      {% for c in row.cells %}<td class="c" {% if c.n %}style="background:rgba(234,88,12,{{ c.a|floatformat:"3u" }})" {% endif %}title="{{ c.n }}"></td>{% endfor %}</tr>{% endfor %}
+  </tbody></table>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Columns are {{ r.interval }} bars from {{ r.heatmap.days.0|date:"Y-m-d H:i" }} to {{ r.heatmap.days|last|date:"Y-m-d H:i" }} UTC; ◀ is the current price.</p>
+</div>
+{% endif %}
+
+<div class="card scroll">
+  <h3 style="margin-top:0">Most-revisited zones <span class="muted" style="font-size:13px">top 30</span></h3>
+  <table>
+    <thead><tr><th>Bar (UTC)</th><th>Type</th><th class="num">Level</th><th class="num">Zone</th><th class="num">Touches</th><th class="num">Held</th><th class="num">Broke</th></tr></thead>
+    <tbody>{% for z in r.zones %}<tr><td class="mono">{{ z.date|date:"m-d H:i" }}</td><td class="{% if z.kind == 'high' %}up{% else %}down{% endif %}">{{ z.kind }}</td>
+      <td class="num mono">{{ z.price|fprice }}</td><td class="num mono muted">{{ z.lower|fprice }} – {{ z.upper|fprice }}</td>
+      <td class="num"><b>{{ z.touches|length }}</b></td><td class="num up">{{ z.held }}</td><td class="num down">{{ z.broke }}</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if not symbol %}
+<div class="card muted">Type a coin (e.g. SOL, PEPE, ARB), pick an exchange and a period, and press Scan. Or open a coin from the
+  <a href="{% url 'market:screener' %}">Screener</a> with its Scan button.</div>
+{% endif %}
+{% endblock %}

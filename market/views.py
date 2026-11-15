@@ -22,7 +22,7 @@ from .exchanges.base import ExchangeError
 from .exchanges.gate import get_client
 from .forms import CoinForm
 from .models import Coin, Job
-from .services import chart, coininfo, compare, gaps, jobs, live, screener, zones
+from .services import chart, coininfo, compare, gaps, jobs, live, scanner, screener, zones
 from .services.history import daily_history, summarize
 from .services.export import build_workbook, build_zones_workbook
 from .services.levels import levels_with_previous
@@ -459,3 +459,37 @@ def coin_enrich(request, pk: int):
     else:
         messages.error(request, "Gate.io does not list this coin.")
     return redirect("market:coin_detail", pk=pk)
+
+
+@login_required
+def scanner_page(request):
+    """Analyse any coin on any supported exchange on demand (nothing stored); add it if it looks promising."""
+    from .exchanges.public import EXCHANGES
+
+    symbol = (request.GET.get("symbol") or "").strip().upper()[:20]
+    quote = (request.GET.get("quote") or settings.MARKET["DEFAULT_QUOTE"]).strip().upper()[:10]
+    exchange = request.GET.get("exchange") if request.GET.get("exchange") in EXCHANGES else "gate"
+    try:
+        days = int(request.GET.get("days") or scanner.DEFAULT_DAYS)
+    except ValueError:
+        days = scanner.DEFAULT_DAYS
+    days = days if days in scanner.PERIODS else scanner.DEFAULT_DAYS
+    width = _zone_width(request)
+    ctx = {"symbol": symbol, "quote": quote, "exchange": exchange, "days": days, "width": width,
+           "exchanges": [(k, e.name) for k, e in EXCHANGES.items()],
+           "periods": [(d, label) for d, (label, _iv) in scanner.PERIODS.items()], "r": None, "where": [], "error": ""}
+    if symbol:
+        try:
+            ctx["r"] = scanner.scan(exchange, symbol, quote, days, width)
+        except ExchangeError as exc:
+            ctx["error"] = f"{EXCHANGES[exchange].name}: {exc}"
+        ctx["where"] = scanner.where_it_trades(symbol, quote)
+        gate = next((w for w in ctx["where"] if w["key"] == "gate"), None)
+        ctx["on_gate"] = bool(gate and gate.get("listed"))
+        ctx["existing"] = Coin.objects.filter(gate_currency=symbol, quote=quote).first()
+        r = ctx["r"]
+        if r and r.get("bars"):
+            ctx["bars_json"] = json.dumps(r["bars"])
+            ctx["bands_json"] = json.dumps([{"lower": h["lower"], "upper": h["upper"], "title": f"#{i}"}
+                                            for i, h in enumerate(r["hotspots"], 1)])
+    return render(request, "market/scanner.html", ctx)

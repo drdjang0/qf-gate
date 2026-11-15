@@ -23,6 +23,7 @@ urlpatterns = [
     path("market/<int:pk>/zones/", views.zones_page, name="zones_page"),
     path("market/<int:pk>/zones.xlsx", views.zones_export, name="zones_export"),
     path("screener/", views.screener_page, name="screener"),
+    path("scanner/", views.scanner_page, name="scanner"),
     path("coins/<int:pk>/compare/", views.compare_page, name="compare_page"),
     path("jobs/", views.JobListView.as_view(), name="job_list"),
     path("export/levels.xlsx", views.export_levels, name="export_levels"),
