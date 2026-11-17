@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Brief, LLMCall, NewsItem
+from .models import Brief, DailyNote, LLMCall, NewsItem
 
 
 @admin.register(NewsItem)
@@ -18,5 +18,12 @@ class LLMCallAdmin(admin.ModelAdmin):
 
 @admin.register(Brief)
 class BriefAdmin(admin.ModelAdmin):
-    list_display = ("created_at", "symbol", "quote", "exchange", "status", "rating", "alpha_pct", "cost_usd")
-    list_filter = ("status", "rating")
+    list_display = ("created_at", "symbol", "quote", "exchange", "source", "status", "rating", "alpha_pct",
+                    "invalidated_at", "cost_usd")
+    list_filter = ("status", "rating", "source")
+
+
+@admin.register(DailyNote)
+class DailyNoteAdmin(admin.ModelAdmin):
+    list_display = ("date", "created_at", "status", "trigger", "cost_usd")
+    list_filter = ("status", "trigger")

@@ -1,5 +1,5 @@
-{# Loads the Intel card after the page. Needs: i_symbol, i_quote, i_exchange (optional), i_coin (optional pk) #}
-<div class="card" id="intel-card" data-url="{% url 'intel:card' %}?symbol={{ i_symbol|urlencode }}&quote={{ i_quote|urlencode }}&exchange={{ i_exchange|default:'gate' }}{% if i_coin %}&coin={{ i_coin }}{% endif %}">
+{# Loads the Intel card after the page. Needs: i_symbol, i_quote, i_exchange (optional), i_coin (optional pk), i_source (optional: where a brief started here is counted, 7.12) #}
+<div class="card" id="intel-card" data-url="{% url 'intel:card' %}?symbol={{ i_symbol|urlencode }}&quote={{ i_quote|urlencode }}&exchange={{ i_exchange|default:'gate' }}{% if i_coin %}&coin={{ i_coin }}{% endif %}&source={{ i_source|default:'intel'|urlencode }}">
   <h3 style="margin-top:0">Intel · {{ i_symbol }}</h3><p class="muted" style="margin:0">Loading news…</p>
 </div>
 <script>

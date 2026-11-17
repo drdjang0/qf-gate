@@ -4,7 +4,7 @@
   <span class="muted" style="font-size:13px">news seen in the last 72 h: <span class="ok">{{ mood.bullish }} bullish</span>, <span class="err">{{ mood.bearish }} bearish</span>, {{ mood.neutral }} neutral</span>
   {% if ai %}<form method="post" action="{% url 'intel:brief_create' %}" style="margin-left:auto">{% csrf_token %}
     <input type="hidden" name="symbol" value="{{ symbol }}"><input type="hidden" name="quote" value="{{ quote }}">
-    <input type="hidden" name="exchange" value="{{ exchange }}">{% if coin %}<input type="hidden" name="coin" value="{{ coin.pk }}">{% endif %}
+    <input type="hidden" name="exchange" value="{{ exchange }}"><input type="hidden" name="source" value="{{ source }}">{% if coin %}<input type="hidden" name="coin" value="{{ coin.pk }}">{% endif %}
     <button class="btn primary" title="Multi-agent AI review of this coin from the app's own data (about 11 AI calls)">AI brief</button></form>{% endif %}
 </div>
 {% if briefs %}<p style="margin:8px 0">{% for b in briefs %}<a href="{% url 'intel:brief_detail' b.pk %}" class="badge {% if b.rating == 'Buy' or b.rating == 'Overweight' %}ok{% elif b.rating == 'Sell' or b.rating == 'Underweight' %}err{% else %}warn{% endif %}" style="text-decoration:none">{{ b.rating|default:b.get_status_display }} · {{ b.created_at|date:"m-d H:i" }}</a> {% endfor %}

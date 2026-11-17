@@ -58,6 +58,14 @@ class Brief(models.Model):
 
     RATINGS = ("Buy", "Overweight", "Hold", "Underweight", "Sell", "Review")
 
+    class Source(models.TextChoices):  # 7.12: where the brief was started from
+        INTEL = "intel", "Intel page"
+        MARKET = "market", "Market page"
+        COIN = "coin", "Coin page"
+        SCANNER = "scanner", "Scanner"
+        SCREENER = "screener", "Screener → Scanner"
+        NOTE = "note", "Morning note"
+
     symbol = models.CharField(max_length=32, db_index=True)
     quote = models.CharField(max_length=16, default="USDT")
     exchange = models.CharField(max_length=16, default="gate")
@@ -86,12 +94,27 @@ class Brief(models.Model):
     ret_pct = models.FloatField(null=True, blank=True)
     btc_ret_pct = models.FloatField(null=True, blank=True)
     alpha_pct = models.FloatField(null=True, blank=True)
+    # 7.9 - 7.12
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.INTEL, db_index=True)
+    thesis = models.JSONField(default=dict, blank=True,
+                              help_text="thesis, pillars, invalidation, scenarios (checked against the fact sheet)")
+    invalidated_at = models.DateTimeField(null=True, blank=True, help_text="When the invalidation price was first hit")
+    invalidated_price = models.FloatField(null=True, blank=True)
+    rechecks = models.JSONField(default=list, blank=True, help_text="Thesis re-checks: at, status, price, verdict, pillars, note")
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
         return f"Brief #{self.pk} {self.symbol}/{self.quote} {self.rating or self.status}"
+
+    @property
+    def invalidation(self):
+        return (self.thesis or {}).get("invalidation")
+
+    @property
+    def recheck_running(self) -> bool:
+        return any(r.get("status") == "running" for r in self.rechecks or [])
 
     @property
     def pair(self) -> str:
@@ -101,3 +124,30 @@ class Brief(models.Model):
     def due_at(self):
         from datetime import timedelta
         return self.created_at + timedelta(hours=self.horizon_hours)
+
+
+class DailyNote(models.Model):
+    """7.11 Morning note: one AI call a day over the active coins, built from stored data only. Advisory."""
+
+    class Status(models.TextChoices):
+        RUNNING = "running", "Running"
+        DONE = "done", "Done"
+        FAILED = "failed", "Failed"
+
+    date = models.DateField(db_index=True, help_text="UTC day the note is for")
+    status = models.CharField(max_length=8, choices=Status.choices, default=Status.RUNNING)
+    created_at = models.DateTimeField(default=timezone.now)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    inputs = models.JSONField(default=dict, blank=True, help_text="The fact sheet the note was written from")
+    text = models.TextField(blank=True)
+    checks = models.JSONField(default=dict, blank=True)
+    calls = models.PositiveIntegerField(default=0)
+    cost_usd = models.FloatField(default=0.0)
+    error = models.TextField(blank=True)
+    trigger = models.CharField(max_length=8, default="auto", help_text="auto (worker) or manual (button)")
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Morning note {self.date} ({self.status})"

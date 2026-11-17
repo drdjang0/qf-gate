@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
@@ -9,8 +10,8 @@ from market.exchanges.public import EXCHANGES
 from market.models import Coin
 from market.services.jobs import service_status
 
-from . import briefs, llm, macro, news, scorecard
-from .models import Brief, NewsItem
+from . import briefs, llm, macro, news, notes, scorecard
+from .models import Brief, DailyNote, NewsItem
 
 
 @login_required
@@ -23,8 +24,9 @@ def index(request):
         items = list(NewsItem.objects.all()[:60])
     return render(request, "intel/index.html", {
         "q": q, "items": items, "mood": news.mood(items), "sources": news.source_status(),
-        "macro": macro.panel(), "ai": llm.status(), "briefs": Brief.objects.select_related("coin")[:30],
-        "score": scorecard.scorecard(), "earned": scorecard.filter_earned(),
+        "macro": macro.panel(), "ai": {**llm.status(), "note_hour": settings.INTEL.get("NOTE_HOUR_UTC", -1),
+                                       "critic": settings.INTEL.get("CRITIC", False)}, "briefs": Brief.objects.select_related("coin")[:30],
+        "score": scorecard.scorecard(), "earned": scorecard.filter_earned(), "note": DailyNote.objects.first(),
         "coins": Coin.objects.filter(is_active=True).order_by("symbol"), "exchanges": [(k, e.name) for k, e in EXCHANGES.items()],
     })
 
@@ -59,8 +61,10 @@ def card(request):
     exchange = request.GET.get("exchange") if request.GET.get("exchange") in EXCHANGES else "gate"
     coin = Coin.objects.filter(pk=request.GET.get("coin")).first() if (request.GET.get("coin") or "").isdigit() else None
     items = news.items_for(symbol, getattr(coin, "name", "") or "", hours=72, limit=8) if symbol else []
+    source = request.GET.get("source") if request.GET.get("source") in Brief.Source.values else Brief.Source.INTEL
     return render(request, "intel/_card.html", {
         "symbol": symbol, "quote": quote, "exchange": exchange, "coin": coin, "items": items, "mood": news.mood(items),
+        "source": source,
         "ai": llm.enabled(), "briefs": Brief.objects.filter(symbol=symbol, quote=quote)[:3] if symbol else [],
     })
 
@@ -74,7 +78,8 @@ def brief_create(request):
         return redirect("intel:index")
     coin = Coin.objects.filter(pk=request.POST.get("coin")).first() if (request.POST.get("coin") or "").isdigit() else None
     try:
-        b = briefs.create(symbol, request.POST.get("quote") or "USDT", request.POST.get("exchange") or "gate", coin)
+        b = briefs.create(symbol, request.POST.get("quote") or "USDT", request.POST.get("exchange") or "gate", coin,
+                          source=request.POST.get("source") or Brief.Source.INTEL)
     except llm.LLMError as exc:
         messages.error(request, str(exc))
         return redirect("intel:index")
@@ -92,5 +97,38 @@ def brief_detail(request, pk: int):
         "b": b, "analysts": [(k, rep.get(k)) for k in briefs.ANALYSTS if rep.get(k)],
         "debate": rep.get("debate") or [], "manager": rep.get("research_manager"), "risk": rep.get("risk") or {},
         "final_raw": rep.get("portfolio_manager"), "facts": (b.inputs or {}).get("fact_sheet", ""),
-        "score": scorecard.SCORES.get(b.rating),
+        "score": scorecard.SCORES.get(b.rating), "ai": llm.enabled(), "rechecks": list(reversed(b.rechecks or [])),
+        "critic_raw": rep.get("critic"),
     })
+
+
+@login_required
+@require_POST
+def brief_recheck(request, pk: int):
+    """7.9: one AI call on fresh data: do the brief's pillars still hold?"""
+    b = get_object_or_404(Brief, pk=pk)
+    if not briefs.start_recheck(b):
+        messages.warning(request, "A re-check is already running, the brief isn't finished, or AI is off.")
+    return redirect("intel:brief_detail", pk=pk)
+
+
+@login_required
+def note_list(request):
+    return render(request, "intel/notes.html", {"notes": DailyNote.objects.all()[:60], "ai": llm.enabled(),
+                                                "hour": settings.INTEL.get("NOTE_HOUR_UTC", -1)})
+
+
+@login_required
+def note_detail(request, pk: int):
+    n = get_object_or_404(DailyNote, pk=pk)
+    return render(request, "intel/note_detail.html", {"n": n, "facts": (n.inputs or {}).get("fact_sheet", "")})
+
+
+@login_required
+@require_POST
+def note_create(request):
+    n = notes.start("manual")
+    if n is None:
+        messages.warning(request, "AI is off, or a note is already being written.")
+        return redirect("intel:note_list")
+    return redirect("intel:note_detail", pk=n.pk)

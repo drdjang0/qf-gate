@@ -22,6 +22,22 @@
     (anthropic, openai, openai_compatible or ollama) plus its key or base URL, and restart. News and the macro panel work without it.</p>{% endif %}
 </div>
 
+{% if ai.enabled or note %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h3 style="margin:0">Morning note</h3>
+    {% if note %}<span class="muted">{{ note.date|date:"Y-m-d" }} · {{ note.get_status_display }}</span>{% endif %}
+    <a href="{% url 'intel:note_list' %}" style="margin-left:auto">All notes</a>
+    {% if ai.enabled %}<form method="post" action="{% url 'intel:note_create' %}">{% csrf_token %}<button class="btn" title="One AI call over your active coins">Write note now</button></form>{% endif %}
+  </div>
+  {% if note and note.status == "done" %}<div style="white-space:pre-wrap;font-size:14px;margin-top:8px;max-height:260px;overflow:auto">{{ note.text }}</div>
+    <a href="{% url 'intel:note_detail' note.pk %}">Open the note</a>
+  {% elif note and note.status == "failed" %}<p class="err">Failed: {{ note.error }}</p>
+  {% elif note %}<p class="warn">Being written… <a href="{% url 'intel:note_detail' note.pk %}">open</a></p>
+  {% else %}<p class="muted" style="margin-bottom:0">No note yet. {% if ai.note_hour >= 0 %}The worker writes one each day after {{ ai.note_hour }}:00 UTC (INTEL_NOTE_HOUR_UTC), or press Write note now.{% else %}Automatic notes are off (INTEL_NOTE_HOUR_UTC=-1); press Write note now.{% endif %}</p>{% endif %}
+</div>
+{% endif %}
+
 {% if ai.enabled %}
 <div class="card">
   <h3 style="margin-top:0">New AI brief</h3>
@@ -32,7 +48,8 @@
     <p><label>Exchange (price data)</label><select name="exchange" style="width:auto">{% for k, n in exchanges %}<option value="{{ k }}">{{ n }}</option>{% endfor %}</select></p>
     <p><button class="btn primary">Run brief</button></p>
   </form>
-  <p class="muted" style="font-size:12px;margin-bottom:0">About 11 AI calls (4 analysts, bull + bear, research manager, 3 risk views, portfolio manager), a few minutes.
+  <p class="muted" style="font-size:12px;margin-bottom:0">About 11 AI calls (4 analysts, bull + bear, research manager, 3 risk views, portfolio manager{% if ai.critic %}, plus the critic{% endif %}), a few minutes.
+    Each brief states a thesis, an invalidation level and bull / base / bear scenarios.
     For a stored coin, open it from its Market or coin page instead: the brief then also gets PDH / PDL, order flow and funding.</p>
 </div>
 {% endif %}
@@ -48,7 +65,7 @@
         <td class="num mono">{% if b.price %}{{ b.price|fprice }}{% else %}–{% endif %}</td>
         <td class="num">{% if b.ret_pct is not None %}{{ b.ret_pct|floatformat:2 }}%{% elif b.status == "done" %}<span class="muted">due {{ b.due_at|date:"m-d H:i" }}</span>{% endif %}</td>
         <td class="num {% if b.alpha_pct > 0 %}ok{% elif b.alpha_pct < 0 %}err{% endif %}">{% if b.alpha_pct is not None %}{{ b.alpha_pct|floatformat:2 }}%{% endif %}</td>
-        <td class="num muted">${{ b.cost_usd|floatformat:3 }}</td><td><a href="{% url 'intel:brief_detail' b.pk %}">open</a></td></tr>
+        <td class="num muted">${{ b.cost_usd|floatformat:3 }}</td><td><a href="{% url 'intel:brief_detail' b.pk %}">open</a>{% if b.invalidated_at %} <span class="badge err" title="Invalidation level hit">wrong</span>{% endif %}</td></tr>
     {% empty %}<tr><td colspan="8" class="muted">No briefs yet.</td></tr>{% endfor %}</tbody>
   </table>
   <h4 style="margin-bottom:4px">Scorecard (settled briefs, all made live)</h4>
@@ -62,6 +79,14 @@
   {% if score.directional %}<p class="muted" style="font-size:13px">Edge (direction × alpha, average over {{ score.directional }} directional briefs):
     <b class="{% if score.edge > 0 %}ok{% else %}err{% endif %}">{{ score.edge|floatformat:2 }}</b> · right {{ score.hit_pct|floatformat:0 }}% of the time.
     Positive edge means following the ratings beat simply holding BTC.</p>{% endif %}
+  {% if score.with_invalidation %}<p class="muted" style="font-size:13px">Invalidation level hit within the horizon: <b>{{ score.invalidated }} of {{ score.with_invalidation }}</b>
+    ({{ score.invalidated_pct|floatformat:0 }}%). A good call is rarely proven wrong by its own level.</p>{% endif %}
+  {% if score.by_source %}<h4 style="margin-bottom:4px">By where the brief was started</h4>
+  <table><thead><tr><th>Source</th><th class="num">Settled</th><th class="num">Avg vs BTC</th><th class="num">Edge</th><th class="num">Right</th></tr></thead>
+    <tbody>{% for r in score.by_source %}<tr><td>{{ r.label }}</td><td class="num">{{ r.n }}</td>
+      <td class="num {% if r.avg_alpha > 0 %}ok{% elif r.avg_alpha < 0 %}err{% endif %}">{{ r.avg_alpha|floatformat:2 }}%</td>
+      <td class="num">{% if r.edge is not None %}{{ r.edge|floatformat:2 }}{% else %}–{% endif %}</td>
+      <td class="num">{% if r.hit_pct is not None %}{{ r.hit_pct|floatformat:0 }}%{% else %}–{% endif %}</td></tr>{% endfor %}</tbody></table>{% endif %}
 </div>
 
 <div class="card">

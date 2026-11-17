@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load market_extras %}
 {% block title %}Brief #{{ b.pk }} {{ b.symbol }} · QF-gate{% endblock %}
-{% block head %}{% if b.status == "queued" or b.status == "running" %}<meta http-equiv="refresh" content="5">{% endif %}
+{% block head %}{% if b.status == "queued" or b.status == "running" or b.recheck_running %}<meta http-equiv="refresh" content="5">{% endif %}
 <style> .rep { white-space:pre-wrap; font-size:14px; } details { margin:6px 0; } summary { cursor:pointer; font-weight:600; } </style>{% endblock %}
 {% block content %}
 <div class="card">
@@ -15,12 +15,33 @@
       {% if b.plan.entry %}<div class="stat"><span class="muted">Entry</span><b class="mono">{{ b.plan.entry|fprice }}</b></div>{% endif %}
       {% if b.plan.stop %}<div class="stat"><span class="muted">Stop</span><b class="mono">{{ b.plan.stop|fprice }}</b></div>{% endif %}
       {% if b.plan.target %}<div class="stat"><span class="muted">Target</span><b class="mono">{{ b.plan.target|fprice }}</b></div>{% endif %}
+      {% if b.invalidation %}<div class="stat"><span class="muted">Proven wrong at</span><b class="mono">{{ b.invalidation|fprice }}</b>
+        {% if b.invalidated_at %}<span class="err">hit {{ b.invalidated_at|date:"m-d H:i" }} UTC</span>{% elif b.settled_at %}<span class="ok">never hit</span>{% else %}<span class="muted">watching (hourly)</span>{% endif %}</div>{% endif %}
       <div class="stat"><span class="muted">Outcome after {{ b.horizon_hours }} h</span>
         {% if b.settled_at %}<b class="{% if b.alpha_pct > 0 %}ok{% else %}err{% endif %}">{{ b.ret_pct|floatformat:2 }}%</b><span class="muted">vs BTC {{ b.alpha_pct|floatformat:2 }}% · settled {{ b.settled_at|date:"m-d H:i" }}</span>
         {% else %}<b class="muted">waiting</b><span class="muted">due {{ b.due_at|date:"Y-m-d H:i" }} UTC</span>{% endif %}</div>
       <div class="stat"><span class="muted">AI calls / cost</span><b>{{ b.calls }}</b><span class="muted">${{ b.cost_usd|floatformat:3 }}</span></div>
     </div>
+    {% if b.thesis.thesis or b.thesis.pillars %}
+      <h4 style="margin-bottom:4px">Thesis</h4>
+      {% if b.thesis.thesis %}<p style="margin-top:0">{{ b.thesis.thesis }}</p>{% endif %}
+      {% if b.thesis.pillars %}<ol style="margin-top:0">{% for p in b.thesis.pillars %}<li>{{ p }}</li>{% endfor %}</ol>{% endif %}
+    {% endif %}
+    {% if b.thesis.scenarios %}
+      <h4 style="margin-bottom:4px">Scenarios</h4>
+      <table><thead><tr><th>Case</th><th>Trigger</th><th class="num">Level</th><th class="num">Chance</th></tr></thead>
+        <tbody>{% for s in b.thesis.scenarios %}<tr><td><b class="{% if s.name == 'bull' %}ok{% elif s.name == 'bear' %}err{% endif %}">{{ s.name|capfirst }}</b></td>
+          <td style="white-space:normal">{{ s.trigger }}</td><td class="num mono">{% if s.level %}{{ s.level|fprice }}{% else %}–{% endif %}</td>
+          <td class="num">{% if s.probability_pct is not None %}{{ s.probability_pct|floatformat:0 }}%{% else %}–{% endif %}</td></tr>{% endfor %}</tbody></table>
+      {% if b.checks.probabilities %}<p class="warn" style="font-size:13px;margin:4px 0">Check: {{ b.checks.probabilities }}.</p>{% endif %}
+    {% endif %}
     {% if b.plan.key_risks %}<h4 style="margin-bottom:4px">Key risks</h4><ul style="margin-top:0">{% for r in b.plan.key_risks %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
+    {% if b.checks.critic %}
+      <div class="card" style="margin:8px 0;{% if b.checks.critic.supported is False %}border-color:var(--warn){% endif %}">
+        <b class="{% if b.checks.critic.supported %}ok{% else %}warn{% endif %}">Independent critic: {% if b.checks.critic.supported %}no objections{% elif b.checks.critic.supported is False %}objections (confidence set to low){% else %}unclear{% endif %}</b>
+        {% for i in b.checks.critic.issues %}<div class="muted">· {{ i }}</div>{% endfor %}
+      </div>
+    {% endif %}
     {% if b.checks.dropped_levels or b.checks.unverified_numbers %}
       <div class="card" style="border-color:var(--warn);margin:8px 0">
         <b class="warn">Grounding checks</b>
@@ -33,8 +54,33 @@
   {% else %}
     <p class="warn">{{ b.get_status_display }}: {{ b.progress }}… <span class="muted">(this page refreshes every 5 s; a brief takes a few minutes)</span></p>
   {% endif %}
-  <p class="muted" style="font-size:12px;margin-bottom:0">Advisory only. A brief never places an order and is never used in backtests or sweeps. It is scored after its horizon on the Intel page.</p>
+  <p class="muted" style="font-size:12px;margin-bottom:0">Advisory only. A brief never places an order and is never used in backtests or sweeps. It is scored after its horizon on the Intel page.
+    Started from: {{ b.get_source_display }}.</p>
 </div>
+
+{% if b.status == "done" and b.rating != "Review" %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h3 style="margin:0">Is the thesis still intact?</h3>
+    {% if ai and not b.recheck_running %}<form method="post" action="{% url 'intel:brief_recheck' b.pk %}" style="margin-left:auto">{% csrf_token %}
+      <button class="btn" title="One AI call: rebuilds the fact sheet now and checks each pillar">Re-check thesis</button></form>{% endif %}
+  </div>
+  <p class="muted" style="font-size:12px;margin:4px 0">One AI call on a fresh fact sheet. Doesn't change the rating or the scorecard: it's a reading aid for an open call.</p>
+  {% for r in rechecks %}
+    <div style="border-top:1px solid var(--border);padding:6px 0">
+      <span class="mono muted">{{ r.at|slice:":16"|cut:"T" }}</span>
+      {% if r.status == "running" %}<span class="badge warn">running…</span>
+      {% elif r.status == "failed" %}<span class="badge err">failed</span> <span class="muted">{{ r.error }}</span>
+      {% else %}<span class="badge {% if r.verdict == 'intact' %}ok{% elif r.verdict == 'broken' %}err{% else %}warn{% endif %}">{{ r.verdict }}</span>
+        <span class="muted">price then {{ r.price|fprice }} · ${{ r.cost_usd|floatformat:3 }}</span>
+        <p style="margin:4px 0">{{ r.note }}</p>
+        {% if r.pillars %}<ul style="margin:0">{% for p in r.pillars %}<li><b class="{% if p.status == 'holding' %}ok{% elif p.status == 'broken' %}err{% else %}warn{% endif %}">{{ p.status }}</b> {{ p.pillar }} <span class="muted">{{ p.why }}</span></li>{% endfor %}</ul>{% endif %}
+        {% if r.unverified %}<div class="warn" style="font-size:12px">Numbers not in the fresh fact sheet: <span class="mono">{{ r.unverified|join:", " }}</span></div>{% endif %}
+      {% endif %}
+    </div>
+  {% empty %}<p class="muted" style="margin:0">No re-checks yet.</p>{% endfor %}
+</div>
+{% endif %}
 
 {% if analysts or debate %}
 <div class="card">
@@ -44,6 +90,7 @@
   {% if manager %}<details><summary>Research manager</summary><div class="rep">{{ manager }}</div></details>{% endif %}
   {% for k, txt in risk.items %}<details><summary>{{ k|capfirst }} risk view</summary><div class="rep">{{ txt }}</div></details>{% endfor %}
   {% if final_raw %}<details><summary>Portfolio manager (raw answer)</summary><div class="rep mono">{{ final_raw }}</div></details>{% endif %}
+  {% if critic_raw %}<details><summary>Critic (raw answer)</summary><div class="rep mono">{{ critic_raw }}</div></details>{% endif %}
 </div>
 {% endif %}
 {% if facts %}

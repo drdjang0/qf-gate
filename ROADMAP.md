@@ -151,6 +151,12 @@ a strategy, the engine or a check; every item is off until switched on.
 | ✅ 7.5 | **Macro and prediction-market panel** | TradingAgents FRED / Polymarket vendors | Context panel: US rates and dollar index (FRED, free key), crypto-related Polymarket odds, BTC dominance. Information only; also an input to 7.4. | Values dated and cached; panel degrades gracefully without keys. | S |
 | ✅ 7.6 | **Brief scorecard and memory** | TradingAgents decision-quality backtest + reflection | Each saved brief is settled later against the coin's realised return and against BTC (alpha), grouped by rating, so we learn whether the briefs are any good. The latest settled briefs and lessons for the same coin are fed into its next brief. Only briefs made live count. | Scorecard per rating and per coin; settlement uses only prices after the brief; memory injection tested. | M |
 | ✅ 7.7 | **AI filter for paper / dry-run bots (optional)** | our idea | A strategy option "only enter when the latest brief for this coin is at least X and no older than N hours". Paper and dry-run only, clearly marked as not backtestable. | Only offered once 7.6 shows a positive edge over enough briefs; blocked entries counted with reason "AI filter". | S |
+| ✅ 7.8 | **Untrusted outside text** | Anthropic financial-services agents (untrusted-document guardrail) | Headlines and prediction-market questions reach the AI only inside a fenced, length-capped data block that every agent is told never to obey. Numbers inside that block don't count as "verified" in the grounding check. | A headline containing instructions is fenced and neutralised; a number seen only in a headline is still flagged unverified. | S |
+| ✅ 7.9 | **Falsifiable thesis + invalidation** | Anthropic thesis-tracker skill | Every brief states a one-line thesis, up to 4 pillars and an **invalidation price** (where the call is proven wrong). The worker watches open briefs and records when the invalidation level is hit; the scorecard reports it. A **Re-check thesis** button asks the AI (one call) whether each pillar still holds on fresh data. | Invalidation on the wrong side of the price is dropped; hits use only 1h candles after the brief and inside its horizon; re-check stored on the brief. | M |
+| ✅ 7.10 | **Bull / base / bear scenarios** | Anthropic earnings-preview skill | Each brief ends with three scenarios (trigger, price level, rough probability). The fact sheet adds the coin's typical daily move so scenarios can be judged against what is normal. | Scenario levels outside the observed range are dropped; probabilities that don't add up to ~100% are flagged. | S |
+| ✅ 7.11 | **Daily morning note** | Anthropic morning-note skill | One AI call a day over your active coins: top call, what changed overnight, what is on today's macro / prediction-market calendar, ideas (each with what would make it wrong), and a review of yesterday's settled calls. "Nothing material" is a valid note. | Runs once a day from the worker (INTEL_NOTE_HOUR_UTC) or on a button; built from stored data only; numbers checked like a brief. | M |
+| ✅ 7.12 | **Hit rate by idea source** | Anthropic idea-generation skill ("track which screens produce the best ideas") | Each brief records where it was started from (Intel page, Market, coin page, Scanner, Screener → Scanner, morning note); the scorecard shows edge and hit rate per source. | Source stored on every new brief; scorecard table per source. | S |
+| ✅ 7.13 | **Independent AI critic (optional, off by default)** | Anthropic critic / auditor leaf workers | One extra call re-reads the final answer against the fact sheet and lists unsupported claims. If it objects, the brief's confidence is set to low and the objections are shown. | Off unless INTEL_CRITIC=true; objections shown on the brief; rating never changed by the critic. | S |
 
 **Phase 7 status notes (honest):**
 - **7.1 Trade journal:** a card on every backtest, paper and bot page. On the existing PDL-reclaim backtests it
@@ -168,9 +174,18 @@ a strategy, the engine or a check; every item is off until switched on.
 - **7.6 Scorecard:** briefs settle after 24 h against the coin's and BTC's price. There are no settled briefs yet.
 - **7.7 AI filter:** paper and dry-run only. It stays inactive until 20 settled directional briefs show a positive
   edge and a hit rate above 50%.
+- **7.8 – 7.13 (ideas from Anthropic's financial-services agent templates, Apache-2.0; ideas only, our own code
+  and prompts):** headlines and Polymarket questions now sit in a fenced UNTRUSTED block and never count as
+  verified numbers; every brief carries a thesis, pillars, an invalidation level and bull / base / bear scenarios
+  (all checked); the worker records when an invalidation level is hit; a one-call thesis re-check; a daily morning
+  note (one call, stored data only); scorecard by idea source; an optional critic (`INTEL_CRITIC`, off). Tested with
+  a stand-in model (212 tests pass); the morning-note and brief fact sheets were built from live data. Like the
+  rest of Phase 7, **not yet run against a real model** (no API key on this PC).
 
 **Not adopted:** TradingAgents' stock-specific parts (SEC fundamentals, insider trades, StockTwits) and
-Yahoo daily prices: our 1-minute Gate.io data is better for crypto.
+Yahoo daily prices: our 1-minute Gate.io data is better for crypto. From Anthropic's templates: the stock-market
+workflows (DCF / LBO / 3-statement models, earnings calls, pitch decks, KYC, ledger reconciliation), their paid data
+connectors and the cloud Managed Agents deployment (our worker already runs briefs locally).
 
 ---
 

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Morning notes · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h2 style="margin:0">Morning notes</h2>
+    <a href="{% url 'intel:index' %}">← Intel</a>
+    {% if ai %}<form method="post" action="{% url 'intel:note_create' %}" style="margin-left:auto">{% csrf_token %}<button class="btn primary">Write note now</button></form>{% endif %}
+  </div>
+  <p class="muted" style="font-size:13px">One AI call over your active coins, from data already stored here: top call, what changed overnight, what's on today,
+    ideas that each say what would prove them wrong, and a review of yesterday's settled briefs.
+    {% if hour >= 0 %}Written automatically each day after {{ hour }}:00 UTC (INTEL_NOTE_HOUR_UTC) while the worker runs.{% else %}Automatic notes are off (INTEL_NOTE_HOUR_UTC=-1).{% endif %}
+    Advisory only.</p>
+  <table>
+    <thead><tr><th>Day (UTC)</th><th>Status</th><th>How</th><th class="num">Cost</th><th></th></tr></thead>
+    <tbody>{% for n in notes %}
+      <tr><td class="mono">{{ n.date|date:"Y-m-d" }} <span class="muted">{{ n.created_at|date:"H:i" }}</span></td>
+        <td><span class="badge {% if n.status == 'done' %}ok{% elif n.status == 'failed' %}err{% else %}warn{% endif %}">{{ n.get_status_display }}</span></td>
+        <td class="muted">{{ n.trigger }}</td><td class="num muted">${{ n.cost_usd|floatformat:3 }}</td>
+        <td><a href="{% url 'intel:note_detail' n.pk %}">open</a></td></tr>
+    {% empty %}<tr><td colspan="5" class="muted">No notes yet.{% if not ai %} Switch AI on first (INTEL_LLM_PROVIDER).{% endif %}</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+{% endblock %}

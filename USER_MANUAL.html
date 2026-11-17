@@ -337,12 +337,22 @@ Treat every result as something to test, not a promise.</div>
       <li>Levels on the wrong side of the price, or far outside the range, are dropped.</li>
       <li>Any price in the summary that isn't in the fact sheet is listed as <i>unverified</i>.</li>
       <li>An unreadable answer becomes <b>Review</b>, never Hold.</li>
+      <li>Headlines and prediction-market questions are <b>outside text</b>: they reach the AI inside a fenced block it is told never to obey, and a number found only there never counts as verified.</li>
     </ul></li>
+  <li><b>Thesis and invalidation:</b> every brief states a one-line thesis, 2–4 <b>pillars</b> it rests on, and an <b>invalidation level</b>: the price that proves the call wrong (below the price for Buy / Overweight, above it for Sell / Underweight, none for Hold).
+    <ul>
+      <li>The worker watches open briefs hourly and records when the invalidation level is hit inside the horizon.</li>
+      <li><b>Re-check thesis</b> on a brief asks one AI call whether each pillar still holds on fresh data. It never changes the rating or the score.</li>
+    </ul></li>
+  <li><b>Scenarios:</b> bull / base / bear, each with a trigger, a price level and a rough chance. The fact sheet includes the coin's typical daily range, so the scenarios can be judged against a normal day.</li>
+  <li><b>Morning note:</b> one AI call a day over your active coins: top call, what changed overnight, what's on today, up to 3 ideas that each say what would prove them wrong, and a review of yesterday's settled briefs. Built only from data already stored here.</li>
+  <li><b>Critic (optional):</b> with <code>INTEL_CRITIC=true</code>, one extra call re-reads the final answer against the fact sheet. If it objects, the brief's confidence is set to low and the objections are shown. It never changes the rating.</li>
   <li><b>Scorecard:</b> each brief is settled after its horizon (24 h by default) against what the coin and BTC actually did.
     <ul>
       <li><b>Alpha</b> is the coin's return minus BTC's.</li>
       <li><b>Edge</b> is the average of rating direction × alpha. Positive means following the briefs beat holding BTC.</li>
       <li>Only briefs made live count, so the AI can never be judged on a past it already knows.</li>
+      <li>It also shows how often briefs hit their own invalidation level, and edge and hit rate <b>by where the brief was started</b> (Intel page, Market, coin page, Scanner, Screener → Scanner), so you learn which entry point gives useful ideas.</li>
     </ul></li>
   <li><b>AI spend:</b> today's cost against the daily cap, plus the calls made. The cap and a daily call limit stop new calls once reached.</li>
 </ul>
@@ -365,9 +375,10 @@ Treat every result as something to test, not a promise.</div>
     <li>how many briefs are settled or waiting;</li>
     <li>whether the AI filter is earned, and why not.</li>
   </ul></td></tr>
+<tr><td><b>Morning note</b></td><td>Today's note (or the latest one), <i>Write note now</i> (one AI call) and <i>All notes</i>. Written automatically each day after <code>INTEL_NOTE_HOUR_UTC</code> (default 06:00 UTC) while the worker runs.</td></tr>
 <tr><td><b>New AI brief</b></td><td>Coin, quote and the exchange to read prices from. Shown only when AI is on. Starting from a stored coin's own page adds PDH/PDL, order flow and funding to the brief.</td></tr>
 <tr><td><b>AI briefs</b></td><td>Every brief: time, coin, rating (or status), price at the brief, return and return vs BTC once settled ("due …" before that), and cost. <i>open</i> shows the full brief.</td></tr>
-<tr><td><b>Scorecard</b></td><td>For each rating: settled count, average return, average alpha vs BTC, and how often it was right. Below it, the overall <b>edge</b> and hit rate.</td></tr>
+<tr><td><b>Scorecard</b></td><td>For each rating: settled count, average return, average alpha vs BTC, and how often it was right. Below it, the overall <b>edge</b> and hit rate, how often invalidation levels were hit, and a table <b>by source</b>. A red <i>wrong</i> badge in the briefs list marks a brief whose invalidation level was hit.</td></tr>
 <tr><td><b>Macro &amp; prediction markets</b></td><td>Rates, dollar index, crypto market and dominance, and Polymarket odds, each with its date. <i>Refresh</i> fetches now. Failing sources are listed.</td></tr>
 <tr><td><b>News &amp; sentiment</b></td><td>The latest headlines with a sentiment badge and source; filter by coin. <i>Refresh news now</i> fetches immediately. The line above the list shows which sources worked.</td></tr>
 <tr><td><b>Recent AI calls</b></td><td>Every call: model, purpose (which brief and which agent), tokens in and out, cost and time, plus <i>cache</i> or <i>error</i> badges.</td></tr>
@@ -387,7 +398,12 @@ Treat every result as something to test, not a promise.</div>
   <li><b>Price, entry, stop, target:</b> the price when the brief was made, and the suggested levels if any. Spot only: Sell / Underweight mean avoid or reduce, not short.</li>
   <li><b>Outcome:</b> after the horizon (24 h by default), the actual return and the return vs BTC.</li>
   <li><b>AI calls / cost:</b> what this brief cost.</li>
+  <li><b>Proven wrong at:</b> the invalidation level, and whether it was hit (with the hour), never hit, or is still being watched.</li>
+  <li><b>Thesis and scenarios:</b> the one-line thesis, its pillars, and the bull / base / bear table. A warning appears if the chances don't add up to about 100%.</li>
+  <li><b>Independent critic:</b> shown only when the critic is on: no objections, or the objections it found.</li>
   <li><b>Grounding checks:</b> dropped levels and <i>unverified numbers</i>, prices the model wrote that aren't in its fact sheet. Treat those with suspicion.</li>
+  <li><b>Is the thesis still intact?</b> <i>Re-check thesis</i> runs one AI call on a fresh fact sheet; each re-check lists a verdict (intact / weakened / broken), each pillar's status and the price at the time.</li>
+  <li><b>Started from:</b> where the brief was started (counted in the scorecard by source).</li>
   <li><b>How the team got there:</b> each analyst's report, the debate, the research manager, the three risk views and the raw final answer, all expandable.</li>
   <li><b>Fact sheet:</b> exactly what the agents were given.</li>
 </ul>
@@ -819,7 +835,8 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
   <span class="step"><b>Bull vs bear</b>debate</span><span class="arrow">→</span>
   <span class="step"><b>Research manager</b>rules, proposes plan</span><span class="arrow">→</span>
   <span class="step"><b>3 risk views</b>aggressive · neutral · conservative</span><span class="arrow">→</span>
-  <span class="step"><b>Portfolio manager</b>final rating</span><span class="arrow">→</span>
+  <span class="step"><b>Portfolio manager</b>rating, thesis, scenarios</span><span class="arrow">→</span>
+  <span class="step"><b>Critic</b>optional</span><span class="arrow">→</span>
   <span class="step"><b>Checks</b>grounding</span>
 </div>
 
@@ -830,7 +847,8 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <tr><td>Zones and the top hotspot bands, with how often they held or broke and their distance from the price</td><td>The same forward-only zone engine as the Zones page</td></tr>
 <tr><td>Where the coin trades: price, 24h change, volume and share on each exchange</td><td>Up to seven exchanges</td></tr>
 <tr><td>PDH / PDL, the last days' highs and lows with their times, order flow (24h delta), funding</td><td>Your stored history (only when the brief is started from a stored coin)</td></tr>
-<tr><td>Headlines mentioning the coin, seen in the last 72 hours, with their sentiment</td><td>The news feed, point in time</td></tr>
+<tr><td>The coin's typical day: average high-to-low range of the last complete days</td><td>Your stored daily levels (stored coins only)</td></tr>
+<tr><td>Headlines mentioning the coin, seen in the last 72 hours, with their sentiment (inside the fenced outside-text block)</td><td>The news feed, point in time</td></tr>
 <tr><td>Rates, dollar index, crypto market and dominance, Polymarket odds</td><td>The macro panel</td></tr>
 <tr><td>What earlier briefs on this coin said and how they turned out, plus the overall record per rating</td><td>The scorecard (memory), only outcomes already known</td></tr>
 </table></div>
@@ -841,12 +859,14 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
   <li><b>Never in backtests or sweeps.</b> A language model was trained on data from after any historical date, so it can quietly "know" the future. Briefs are judged only on decisions made live.</li>
   <li><b>Point in time.</b> News and memory only include what was known when the brief started.</li>
   <li><b>Grounded numbers.</b> Agents are told to use only numbers from the fact sheet. Afterwards, levels on the wrong side of the price, or far outside the 30-day range, are dropped. Prices in the summary that aren't in the fact sheet are flagged.</li>
+  <li><b>Outside text is data, not orders.</b> Headlines and prediction-market questions are written by others. They sit inside a fenced block; every agent is told never to follow instructions in it, and its numbers never "verify" a claim.</li>
+  <li><b>Falsifiable.</b> A call must say what would prove it wrong. If the invalidation level is on the wrong side of the price or far outside the range, it is dropped.</li>
   <li><b>Never a silent Hold.</b> An answer that can't be read becomes <i>Review</i>, and isn't scored.</li>
   <li><b>Capped cost.</b> Every call is logged. A daily dollar cap and a daily call limit stop new calls. An identical prompt within 6 hours is answered from the log for free.</li>
 </ul>
 
 <h3>Cost and time</h3>
-<p>About 11 AI calls and a few minutes per brief. Briefs run one at a time, in the background.</p>
+<p>About 11 AI calls and a few minutes per brief (12 with the critic). A thesis re-check and a morning note are one call each. Briefs run one at a time, in the background.</p>
 <div class="tablewrap"><table>
 <tr><th>Model (examples)</th><th>Price per 1M tokens (in / out)</th><th>Rough cost per brief</th></tr>
 <tr><td><code>claude-opus-5-5</code> (default)</td><td>$4 / $20</td><td>about $0.20</td></tr>
@@ -910,7 +930,8 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <tr><td>Funding sync</td><td>every 6 hours</td><td>Stores Gate.io perpetual funding rates (for futures backtests and briefs)</td></tr>
 <tr><td>News fetch</td><td>every 30 minutes (<code>INTEL_NEWS_EVERY_MINUTES</code>)</td><td>Fetches the news sources and deletes items older than 30 days</td></tr>
 <tr><td>Brief runner</td><td>every 5 seconds</td><td>Starts the oldest queued AI brief when none is running; marks briefs stuck for 20 minutes as failed</td></tr>
-<tr><td>Brief settlement</td><td>every 15 minutes</td><td>Scores briefs whose horizon has passed (the scorecard)</td></tr>
+<tr><td>Brief settlement</td><td>every 15 minutes</td><td>Scores briefs whose horizon has passed (the scorecard). First it checks open briefs' invalidation levels on closed hourly candles.</td></tr>
+<tr><td>Morning note</td><td>checks every 5 minutes</td><td>Writes one note a day after <code>INTEL_NOTE_HOUR_UTC</code>, only when AI is on. A failed automatic note isn't retried the same day; the button can always write one.</td></tr>
 </table></div>
 
 <h2 id="alerts">14. Alerts, Telegram and signal sharing</h2>
@@ -980,6 +1001,9 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <tr><td><code>INTEL_NEWS_KEEP_DAYS</code></td><td>30</td><td>Older news items are deleted</td></tr>
 <tr><td><code>INTEL_BRIEF_HORIZON_HOURS</code></td><td>24</td><td>How far ahead a brief looks, and when it is scored</td></tr>
 <tr><td><code>INTEL_DEBATE_ROUNDS</code></td><td>1</td><td>Bull / bear rounds per brief (each round adds 2 AI calls)</td></tr>
+<tr><td><code>INTEL_CRITIC</code></td><td>false</td><td>Add the independent critic to every brief (one extra AI call)</td></tr>
+<tr><td><code>INTEL_NOTE_HOUR_UTC</code></td><td>6</td><td>Hour (UTC) after which the worker writes the day's morning note; -1 = only the button</td></tr>
+<tr><td><code>INTEL_NOTE_MAX_COINS</code></td><td>15</td><td>Most active coins included in the morning note</td></tr>
 <tr><td><code>INTEL_FILTER_MIN_BRIEFS</code></td><td>20</td><td>Settled directional briefs needed before the AI filter can act</td></tr>
 </table></div>
 <p>Restart the web server and the worker after changing <code>.env</code>. For the Anthropic provider also run <code>pip install anthropic</code>.</p>
@@ -1007,6 +1031,7 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <div><dt>Cooldown</dt><dd>Protection: wait N bars after an exit before entering again. <span class="cat">Protections</span></dd></div>
 <div><dt>Curve-fitting (overfitting)</dt><dd>Settings tuned so tightly to past data that they fail on new data. Detected by out-of-sample and walk-forward tests. <span class="cat">Testing</span></dd></div>
 <div><dt>CVD (cumulative volume delta)</dt><dd>Running total of delta; rising = buyers have been more aggressive. <span class="cat">Order flow</span></dd></div>
+<div><dt>Critic (brief)</dt><dd>Optional extra AI call that re-reads a brief's answer against its fact sheet; objections lower the confidence, never the rating. <span class="cat">Intel</span></dd></div>
 <div><dt>Daily AI budget</dt><dd>The most the app may spend on AI calls per day (and the most calls per day). New calls stop once reached. <span class="cat">Intel</span></dd></div>
 <div><dt>Delta</dt><dd>Taker-buy volume minus taker-sell volume for a bar or day. <span class="cat">Order flow</span></dd></div>
 <div><dt>Delisted</dt><dd>No longer traded on the exchange. The daily identity check catches it. <span class="cat">Coins</span></dd></div>
@@ -1039,6 +1064,7 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <div><dt>Leverage</dt><dd>Position value ÷ margin. 5× means a 1% move changes your margin by 5%. <span class="cat">Futures</span></dd></div>
 <div><dt>Limit order</dt><dd>An order at a set price that fills only if price trades through it. <span class="cat">Orders</span></dd></div>
 <div><dt>Liquidation</dt><dd>Futures position closed by the exchange when losses eat the margin. In QF-gate it costs the whole margin. <span class="cat">Futures</span></dd></div>
+<div><dt>Invalidation level</dt><dd>The price a brief names as proof it was wrong. The worker records when it is hit within the brief's horizon. <span class="cat">Intel</span></dd></div>
 <div><dt>LLM</dt><dd>Large language model: the AI that writes the brief's reports (e.g. Claude). <span class="cat">Intel</span></dd></div>
 <div><dt>Look-ahead (bias)</dt><dd>A strategy accidentally using future data. The look-ahead check detects it. <span class="cat">Testing</span></dd></div>
 <div><dt>Maintenance margin</dt><dd>Minimum margin before liquidation; sets the liquidation price. <span class="cat">Futures</span></dd></div>
@@ -1049,6 +1075,9 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <div><dt>Paper trading</dt><dd>Running a strategy on live bars with simulated fills at modelled prices. <span class="cat">Testing</span></dd></div>
 <div><dt>Partial take-profit</dt><dd>Selling part of a position at a profit level and letting the rest run. <span class="cat">Exits</span></dd></div>
 <div><dt>PDH / PDL</dt><dd>Previous day's high / previous day's low (UTC day by default). Key reference levels. <span class="cat">Levels</span></dd></div>
+<div><dt>Morning note</dt><dd>A daily AI summary of your active coins: top call, overnight changes, today's events, ideas with what would prove them wrong, and yesterday's calls reviewed. <span class="cat">Intel</span></dd></div>
+<div><dt>Outside text</dt><dd>Headlines and prediction-market questions written by others. Fenced off for the AI as data, never instructions; their numbers never verify a claim. <span class="cat">Intel</span></dd></div>
+<div><dt>Pillars (brief)</dt><dd>The 2-4 checkable statements a brief's thesis rests on; a re-check reports each as holding, weakening or broken. <span class="cat">Intel</span></dd></div>
 <div><dt>Point in time</dt><dd>Using only what was known at that moment. News is dated by when we first saw it, briefs by when they finished. <span class="cat">Intel</span></dd></div>
 <div><dt>Polymarket</dt><dd>A prediction market; its prices are the crowd's odds of an event (e.g. a BTC price level by a date). <span class="cat">Intel</span></dd></div>
 <div><dt>Portfolio backtest</dt><dd>One strategy on several coins sharing one balance and a max number of open trades. <span class="cat">Testing</span></dd></div>
@@ -1062,13 +1091,17 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <div><dt>R (R multiple)</dt><dd>The risk unit: entry − stop = 1R. A +2R trade made twice what it risked. <span class="cat">Metrics</span></dd></div>
 <div><dt>Range %</dt><dd>(High − low) ÷ low over a period: a volatility measure. <span class="cat">Market</span></dd></div>
 <div><dt>Reclaim</dt><dd>Price closing back above a level it had just fallen below. <span class="cat">Strategy</span></dd></div>
+<div><dt>Re-check (thesis)</dt><dd>One AI call on fresh data that says whether a brief's pillars still hold. Doesn't change the rating or the scorecard. <span class="cat">Intel</span></dd></div>
 <div><dt>Review (rating)</dt><dd>A brief whose answer couldn't be read. Not a Hold; not scored. <span class="cat">Intel</span></dd></div>
 <div><dt>ROI target / decay</dt><dd>Take profit at a % gain; with decay, the target falls over time toward break-even. <span class="cat">Exits</span></dd></div>
+<div><dt>Scenarios (brief)</dt><dd>Bull / base / bear cases with a trigger, a price level and a rough chance; checked against the fact sheet. <span class="cat">Intel</span></dd></div>
 <div><dt>Scorecard (briefs)</dt><dd>How settled AI briefs did per rating and per coin: return, alpha vs BTC, hit rate, edge. <span class="cat">Intel</span></dd></div>
 <div><dt>Scale in</dt><dd>Adding to a position at lower prices in fixed steps. <span class="cat">Sizing</span></dd></div>
 <div><dt>Scanner</dt><dd>On-demand deep analysis of one coin on any exchange, with nothing stored. <span class="cat">Tabs</span></dd></div>
 <div><dt>Screener</dt><dd>Filtered list of every pair on one exchange or all combined. <span class="cat">Tabs</span></dd></div>
 <div><dt>Sentiment (news)</dt><dd>Bullish / bearish / neutral label from a simple word count in the headline. A rough mood, not a model. <span class="cat">Intel</span></dd></div>
+<div><dt>Source (brief)</dt><dd>Where a brief was started: Intel page, Market, coin page, Scanner, Screener → Scanner or morning note. The scorecard shows results per source. <span class="cat">Intel</span></dd></div>
+<div><dt>Thesis (brief)</dt><dd>The one falsifiable sentence a brief stands on, with its pillars and invalidation level. <span class="cat">Intel</span></dd></div>
 <div><dt>Sharpe ratio</dt><dd>Return per unit of volatility. <span class="cat">Metrics</span></dd></div>
 <div><dt>Short</dt><dd>Profiting from a fall: sell first, buy back lower. Futures only here. <span class="cat">Futures</span></dd></div>
 <div><dt>Signal</dt><dd>A strategy's output: buy (with stop and target) or sell. <span class="cat">Strategy</span></dd></div>

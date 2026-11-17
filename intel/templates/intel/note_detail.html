@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Morning note {{ n.date|date:"Y-m-d" }} · QF-gate{% endblock %}
+{% block head %}{% if n.status == "running" %}<meta http-equiv="refresh" content="5">{% endif %}
+<style> .rep { white-space:pre-wrap; font-size:14px; } summary { cursor:pointer; font-weight:600; } </style>{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h2 style="margin:0">Morning note · {{ n.date|date:"Y-m-d" }}</h2>
+    <span class="muted">written {{ n.created_at|date:"H:i" }} UTC ({{ n.trigger }}) · {{ n.calls }} call{{ n.calls|pluralize }} · ${{ n.cost_usd|floatformat:3 }}</span>
+    <a href="{% url 'intel:note_list' %}" style="margin-left:auto">All notes</a>
+  </div>
+  {% if n.status == "done" %}
+    <div class="rep" style="margin-top:10px">{{ n.text }}</div>
+    {% if n.checks.unverified_numbers %}<div class="card" style="border-color:var(--warn);margin:8px 0"><b class="warn">Grounding check</b>
+      <div class="muted">Numbers in the note not found in its fact sheet (treat with suspicion): <span class="mono">{{ n.checks.unverified_numbers|join:", " }}</span></div></div>
+    {% else %}<p class="muted" style="font-size:13px">Grounding check passed: every number in the note is in its fact sheet (small counts aside).</p>{% endif %}
+  {% elif n.status == "failed" %}<p class="err">Failed: {{ n.error }}</p>
+  {% else %}<p class="warn">Being written… <span class="muted">(this page refreshes every 5 s)</span></p>{% endif %}
+  <p class="muted" style="font-size:12px;margin-bottom:0">Advisory only: research, not financial advice. Nothing here places a trade.</p>
+</div>
+{% if facts %}<div class="card"><details><summary>Fact sheet (everything the AI was given)</summary><div class="rep mono" style="font-size:12px">{{ facts }}</div></details></div>{% endif %}
+{% endblock %}

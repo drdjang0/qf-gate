@@ -52,7 +52,7 @@
         <td class="num">{{ r.range_pct|floatformat:1 }}%</td>
         {% if combined %}<td><div class="venues">{% for v in r.venues %}<span class="{% if forloop.first %}lead{% endif %}" title="last {{ v.last|fprice }}">{{ v.name }} {{ v.share_pct|floatformat:0 }}%</span>{% endfor %}</div></td>
           <td class="num {% if r.gap_warn %}err{% endif %}"{% if r.gap_warn %} title="Venues disagree a lot: check it is the same coin"{% endif %}>{% if r.venue_count > 1 %}{{ r.price_gap_pct|floatformat:2 }}%{% if r.gap_warn %} ⚠{% endif %}{% else %}<span class="muted">–</span>{% endif %}</td>{% endif %}
-        <td style="white-space:nowrap"><a class="btn" href="{% url 'market:scanner' %}?symbol={{ r.base }}&quote={{ f.quote }}&exchange={{ r.scan_exchange }}">Scan</a>
+        <td style="white-space:nowrap"><a class="btn" href="{% url 'market:scanner' %}?symbol={{ r.base }}&quote={{ f.quote }}&exchange={{ r.scan_exchange }}&from=screener">Scan</a>
           {% if r.added %}<span class="badge ok">added</span>
           {% elif r.on_gate %}<a class="btn" href="{% url 'market:coin_create' %}?symbol={{ r.base }}&gate_currency={{ r.base }}&quote={{ f.quote }}">Add coin</a>
           {% elif r.on_gate is None %}<span class="badge warn" title="Gate.io could not be reached to check">Gate.io ?</span>
