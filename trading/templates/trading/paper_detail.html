@@ -38,6 +38,8 @@
 {% include "trading/_price_chart.html" %}
 
 {% include "trading/_breakdowns.html" %}
+{% if ai_filter %}<div class="card"><b>AI filter</b> <span class="badge {% if ai_filter.active %}ok{% else %}warn{% endif %}">{% if ai_filter.active %}active{% else %}inactive{% endif %}</span> <span class="muted">minimum rating {{ ai_filter.level }}: {{ ai_filter.why }}. Entries it blocked are counted under "AI filter" reasons.</span></div>{% endif %}
+{% include "trading/_journal_card.html" with kind="paper" pk=s.pk %}
 
 <div class="card scroll">
   <h3 style="margin-top:0">Closed trades</h3>

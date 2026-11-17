@@ -1,0 +1,13 @@
+{# Loads the Intel card after the page. Needs: i_symbol, i_quote, i_exchange (optional), i_coin (optional pk) #}
+<div class="card" id="intel-card" data-url="{% url 'intel:card' %}?symbol={{ i_symbol|urlencode }}&quote={{ i_quote|urlencode }}&exchange={{ i_exchange|default:'gate' }}{% if i_coin %}&coin={{ i_coin }}{% endif %}">
+  <h3 style="margin-top:0">Intel · {{ i_symbol }}</h3><p class="muted" style="margin:0">Loading news…</p>
+</div>
+<script>
+(function () {
+  const box = document.getElementById('intel-card');
+  fetch(box.dataset.url, { credentials: 'same-origin' })
+    .then(r => r.ok ? r.text() : Promise.reject('HTTP ' + r.status))
+    .then(html => { box.innerHTML = html; })
+    .catch(e => { box.innerHTML = '<h3 style="margin-top:0">Intel</h3><p class="err">Could not load: ' + e + '</p>'; });
+})();
+</script>

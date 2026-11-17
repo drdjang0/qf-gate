@@ -9,3 +9,5 @@ whitenoise>=6.7           # serves static files (admin CSS) when DJANGO_DEBUG=fa
 gunicorn>=23 ; sys_platform != "win32"   # Linux/container web server (use waitress on Windows)
 waitress>=3 ; sys_platform == "win32"
 numpy>=2.0                # ML strategy (trading/strategies/ml.py)
+# optional: only needed when INTEL_LLM_PROVIDER=anthropic
+anthropic

@@ -1,0 +1,61 @@
+{# Trade journal fragment (roadmap 7.1), loaded into _journal_card.html. Needs: j (journal.build), s (its summary) #}
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+  <h3 style="margin:0">Trade journal</h3>
+  <span class="muted" style="font-size:13px">what price did after each exit</span>
+  <div class="seg" style="margin-left:auto" title="How many {{ j.interval }} bars after the exit to look at">
+    {% for h in j.horizons %}<button type="button" data-h="{{ h }}"{% if h == j.horizon %} class="active"{% endif %}>{{ h }} bars</button>{% endfor %}
+  </div>
+</div>
+
+<ul style="margin:10px 0;padding-left:18px">
+  {% for l in s.lessons %}<li class="{% if l.tone == 'warn' %}warn{% elif l.tone == 'ok' %}ok{% endif %}" style="margin:3px 0">{{ l.text }}</li>{% endfor %}
+</ul>
+
+{% if s.verdicts %}
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+  {% for v in s.verdicts %}<span class="badge {{ v.tone }}" title="{{ v.help }}">{{ v.name }}: {{ v.count }}</span>{% endfor %}
+</div>
+{% endif %}
+
+{% if s.reviewed %}
+<p class="muted" style="font-size:13px;margin:4px 0 10px">{{ s.reviewed }} trades reviewed over the {{ s.span }} after each exit{% if s.waiting %}, {{ s.waiting }} waiting{% endif %}.
+  While open, winners went on average <b>+{{ s.avg_mfe_win|floatformat:2|default:"–" }}R</b> in their favour and <b>−{{ s.avg_mae_win|floatformat:2|default:"–" }}R</b> against;
+  losers <b>+{{ s.avg_mfe_loss|floatformat:2|default:"–" }}R</b> and <b>−{{ s.avg_mae_loss|floatformat:2|default:"–" }}R</b>.</p>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:12px">
+  <div><b>By exit reason</b>
+    <table style="margin-top:4px"><thead><tr><th>Exit</th><th class="num">Trades</th><th class="num">Win %</th><th class="num">Avg R</th>
+      <th class="num" title="Average best excursion while open">MFE</th><th class="num" title="Average worst excursion while open">MAE</th>
+      <th class="num" title="Winners: average further run after the exit">Missed</th><th class="num" title="Exited early · came back past the entry">Early · back</th></tr></thead>
+      <tbody>{% for g in s.by_exit %}<tr><td class="mono">{{ g.key }}</td><td class="num">{{ g.trades }}</td><td class="num">{{ g.win_pct|floatformat:0 }}%</td>
+        <td class="num {% if g.avg_r >= 0 %}ok{% else %}err{% endif %}">{{ g.avg_r|floatformat:2 }}</td>
+        <td class="num">{{ g.avg_mfe|floatformat:2|default:"–" }}</td><td class="num">{{ g.avg_mae|floatformat:2|default:"–" }}</td>
+        <td class="num">{{ g.avg_missed|floatformat:2|default:"–" }}</td><td class="num">{{ g.early }} · {{ g.shaken }}</td></tr>{% endfor %}</tbody></table>
+  </div>
+  <div><b>By entry type</b>
+    <table style="margin-top:4px"><thead><tr><th>Entry</th><th class="num">Trades</th><th class="num">Win %</th><th class="num">Avg R</th>
+      <th class="num">MFE</th><th class="num">MAE</th><th class="num">Missed</th><th class="num">Early · back</th></tr></thead>
+      <tbody>{% for g in s.by_tag %}<tr><td class="mono">{{ g.key }}</td><td class="num">{{ g.trades }}</td><td class="num">{{ g.win_pct|floatformat:0 }}%</td>
+        <td class="num {% if g.avg_r >= 0 %}ok{% else %}err{% endif %}">{{ g.avg_r|floatformat:2 }}</td>
+        <td class="num">{{ g.avg_mfe|floatformat:2|default:"–" }}</td><td class="num">{{ g.avg_mae|floatformat:2|default:"–" }}</td>
+        <td class="num">{{ g.avg_missed|floatformat:2|default:"–" }}</td><td class="num">{{ g.early }} · {{ g.shaken }}</td></tr>{% endfor %}</tbody></table>
+  </div>
+</div>
+{% endif %}
+
+{% if j.rows %}
+<details style="margin-top:10px"><summary>Every trade ({{ j.rows|length }})</summary>
+  <table style="margin-top:6px"><thead><tr><th>Entry (UTC)</th><th>Side</th><th>Entry type</th><th>Exit</th><th class="num">R</th>
+    <th class="num">MFE</th><th class="num">MAE</th><th class="num">After: further</th><th class="num">After: against</th><th>Verdict</th></tr></thead>
+    <tbody>{% for r in j.rows %}<tr>
+      <td class="mono">{{ r.entry_dt|date:"Y-m-d H:i" }}</td><td>{{ r.side }}</td><td class="mono">{{ r.entry_tag }}</td><td class="mono">{{ r.exit_reason }}</td>
+      <td class="num {% if r.r >= 0 %}ok{% else %}err{% endif %}">{{ r.r|floatformat:2 }}</td>
+      <td class="num">{{ r.mfe_r|floatformat:2|default:"–" }}</td><td class="num">{{ r.mae_r|floatformat:2|default:"–" }}</td>
+      <td class="num">{{ r.run_after_r|floatformat:2|default:"–" }}</td><td class="num">{{ r.drop_after_r|floatformat:2|default:"–" }}</td>
+      <td><span class="badge {{ r.tone }}">{{ r.verdict }}</span>{% if r.r_basis != "stop" %} <span class="muted" title="No stop: R = 1% of entry">*</span>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table>
+</details>
+{% endif %}
+<p class="muted" style="font-size:12px;margin:8px 0 0">A review with hindsight, never used by any decision. All values in R (1R = entry to the initial stop).
+  MFE / MAE = furthest price went for / against the trade while it was open. "After" = furthest it went in the {{ s.span }} after the exit bar.
+  Early · back = winners that ran 1R further after the exit · losers that came back past the entry.</p>

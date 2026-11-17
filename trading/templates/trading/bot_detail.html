@@ -60,4 +60,6 @@
   <p class="muted" style="font-size:12px;margin-bottom:0">Decision price = the last price when the bot decided. Slippage is the fill compared with it (positive = worse).
     Model P&amp;L is what the engine's simulation made on the same decisions; the gap between the two is the cost of real execution.</p>
 </div>
+{% if ai_filter %}<div class="card"><b>AI filter</b> <span class="badge {% if ai_filter.active %}ok{% else %}warn{% endif %}">{% if ai_filter.active %}active{% else %}inactive{% endif %}</span> <span class="muted">minimum rating {{ ai_filter.level }}: {{ ai_filter.why }}. Entries it blocked are counted under "AI filter" reasons.</span></div>{% endif %}
+{% include "trading/_journal_card.html" with kind="bot" pk=bot.pk %}
 {% endblock %}

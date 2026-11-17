@@ -27,6 +27,7 @@ urlpatterns = [
     path("bots/<int:pk>/stop/", views.bot_stop, name="bot_stop"),
     path("bots/<int:pk>/exit/", views.bot_force_exit, name="bot_force_exit"),
     path("control/", views.control, name="control"),
+    path("journal/<str:kind>/<int:pk>/", views.journal_partial, name="journal"),
     path("api/v1/signals", views.api_signals, name="api_signals"),
     path("api/v1/signals/ingest", views.api_ingest, name="api_ingest"),
     path("<int:pk>/portfolio/", views.portfolio_create, name="portfolio_create"),

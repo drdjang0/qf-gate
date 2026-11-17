@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "market",
     "trading",
+    "intel",
 ]
 
 MIDDLEWARE = [
@@ -190,4 +191,31 @@ LOGGING = {
     "formatters": {"plain": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"}},
     "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
     "loggers": {"market": {"handlers": ["console"], "level": os.environ.get("MARKET_LOG_LEVEL", "INFO")}},
+}
+
+
+# Phase 7: AI analysis layer (news, macro, LLM briefs, scorecard, AI filter). Everything that calls an LLM
+# stays hidden until INTEL_LLM_PROVIDER is set; news and macro need no key.
+INTEL = {
+    # "" (off) | anthropic | openai | openai_compatible | ollama
+    "LLM_PROVIDER": os.environ.get("INTEL_LLM_PROVIDER", "").strip().lower(),
+    "LLM_MODEL": os.environ.get("INTEL_LLM_MODEL", ""),  # deep model (managers); default per provider
+    "LLM_QUICK_MODEL": os.environ.get("INTEL_LLM_QUICK_MODEL", ""),  # analysts / debaters; default = LLM_MODEL
+    "LLM_BASE_URL": os.environ.get("INTEL_LLM_BASE_URL", ""),  # OpenAI-compatible / Ollama endpoint
+    "LLM_API_KEY": os.environ.get("INTEL_LLM_API_KEY", ""),  # else ANTHROPIC_API_KEY / OPENAI_API_KEY
+    "LLM_DAILY_BUDGET_USD": float(os.environ.get("INTEL_LLM_DAILY_BUDGET_USD", "2")),
+    "LLM_MAX_CALLS_PER_DAY": int(os.environ.get("INTEL_LLM_MAX_CALLS_PER_DAY", "200")),
+    "LLM_PRICE_IN": os.environ.get("INTEL_LLM_PRICE_IN", ""),  # USD per 1M input tokens (overrides the table)
+    "LLM_PRICE_OUT": os.environ.get("INTEL_LLM_PRICE_OUT", ""),
+    "LLM_CACHE_HOURS": float(os.environ.get("INTEL_LLM_CACHE_HOURS", "6")),
+    "NEWS_EVERY_MINUTES": int(os.environ.get("INTEL_NEWS_EVERY_MINUTES", "30")),  # 0 = only the Refresh button
+    "NEWS_FEEDS": [u for u in os.environ.get(
+        "INTEL_NEWS_FEEDS",
+        "https://www.coindesk.com/arc/outboundfeeds/rss/,https://cointelegraph.com/rss,https://decrypt.co/feed",
+    ).split(",") if u],
+    "NEWS_REDDIT": os.environ.get("INTEL_NEWS_REDDIT", "true").lower() == "true",
+    "NEWS_KEEP_DAYS": int(os.environ.get("INTEL_NEWS_KEEP_DAYS", "30")),
+    "BRIEF_HORIZON_HOURS": int(os.environ.get("INTEL_BRIEF_HORIZON_HOURS", "24")),
+    "DEBATE_ROUNDS": int(os.environ.get("INTEL_DEBATE_ROUNDS", "1")),
+    "FILTER_MIN_BRIEFS": int(os.environ.get("INTEL_FILTER_MIN_BRIEFS", "20")),
 }

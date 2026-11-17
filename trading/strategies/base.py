@@ -103,6 +103,12 @@ RISK_PARAMS: dict[str, Param] = {
     "min_entry_delta_pct": Param("float", 0.0, "Order flow: only buy when taker-buy minus taker-sell volume on the "
                                  "signal bar is at least this % of its volume (bars without order-flow data are skipped)",
                                  min=0, max=100),
+    # -- 7.7 AI filter (paper trading and dry-run bots only; ignored by backtests, sweeps and live bots)
+    "ai_min_rating": Param("choice", "off", "AI filter (paper / dry-run only, not backtestable): only enter when the latest "
+                           "AI brief for this coin is at least this rating. Acts only once the brief scorecard has earned "
+                           "it (Intel page)", choices=("off", "buy", "overweight", "hold")),
+    "ai_max_age_hours": Param("int", 24, "... and that brief is no older than this many hours at the bar's close",
+                              min=1, max=720),
     # -- protections (0 = off): pause new entries after bad runs; the base of the live kill switch
     "cooldown_bars": Param("int", 0, "Protection: bars to wait after any exit before a new entry", min=0, max=10_000),
     "sl_guard_trades": Param("int", 0, "Protection: pause after this many stop-outs ...", min=0, max=100),

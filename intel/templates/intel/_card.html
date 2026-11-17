@@ -1,0 +1,17 @@
+{# News + AI briefs for one coin (loaded into Market / Scanner / coin pages by _card_loader.html) #}
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+  <h3 style="margin:0">Intel · {{ symbol }}</h3>
+  <span class="muted" style="font-size:13px">news seen in the last 72 h: <span class="ok">{{ mood.bullish }} bullish</span>, <span class="err">{{ mood.bearish }} bearish</span>, {{ mood.neutral }} neutral</span>
+  {% if ai %}<form method="post" action="{% url 'intel:brief_create' %}" style="margin-left:auto">{% csrf_token %}
+    <input type="hidden" name="symbol" value="{{ symbol }}"><input type="hidden" name="quote" value="{{ quote }}">
+    <input type="hidden" name="exchange" value="{{ exchange }}">{% if coin %}<input type="hidden" name="coin" value="{{ coin.pk }}">{% endif %}
+    <button class="btn primary" title="Multi-agent AI review of this coin from the app's own data (about 11 AI calls)">AI brief</button></form>{% endif %}
+</div>
+{% if briefs %}<p style="margin:8px 0">{% for b in briefs %}<a href="{% url 'intel:brief_detail' b.pk %}" class="badge {% if b.rating == 'Buy' or b.rating == 'Overweight' %}ok{% elif b.rating == 'Sell' or b.rating == 'Underweight' %}err{% else %}warn{% endif %}" style="text-decoration:none">{{ b.rating|default:b.get_status_display }} · {{ b.created_at|date:"m-d H:i" }}</a> {% endfor %}
+  <span class="muted" style="font-size:12px">latest AI briefs</span></p>{% endif %}
+<ul style="padding-left:16px;margin:6px 0">{% for it in items %}
+  <li style="margin:3px 0"><span class="badge {% if it.sentiment == 'bullish' %}ok{% elif it.sentiment == 'bearish' %}err{% endif %}">{{ it.sentiment }}</span>
+    {% if it.url %}<a href="{{ it.url }}" target="_blank" rel="noopener">{{ it.title }}</a>{% else %}{{ it.title }}{% endif %}
+    <span class="muted" style="font-size:12px">{{ it.source }} · {{ it.first_seen|date:"m-d H:i" }}</span></li>
+{% empty %}<li class="muted">No news mentioning {{ symbol }} in the last 72 hours.</li>{% endfor %}</ul>
+<p class="muted" style="font-size:12px;margin:0">Sentiment = a simple word count, a rough mood only. <a href="{% url 'intel:index' %}?q={{ symbol }}">More on the Intel page</a>.</p>

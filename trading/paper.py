@@ -65,6 +65,9 @@ def step_session(session_id: int, now: datetime | None = None) -> int:
     prev_pending = (s.state or {}).get("pending")
     engine = Engine(strategy, s.risk, settings.MARKET["DAY_TIMEZONE"], state=s.state or None,
                     funding=funding_map(s.config.coin, from_dt, now + timedelta(minutes=1)))
+    from intel.gate import make_gate  # 7.7 AI filter (no-op unless switched on and earned)
+
+    engine.entry_gate = make_gate(s.config.coin, s.risk, "paper")
     start_ts = int(s.started_at.timestamp())
     closed: list[dict] = []
     for bar in bars:

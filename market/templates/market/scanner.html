@@ -150,4 +150,5 @@
 <div class="card muted">Type a coin (e.g. SOL, PEPE, ARB), pick an exchange and a period, and press Scan. Or open a coin from the
   <a href="{% url 'market:screener' %}">Screener</a> with its Scan button.</div>
 {% endif %}
+{% if symbol %}{% include "intel/_card_loader.html" with i_symbol=symbol i_quote=quote i_exchange=exchange i_coin=existing.pk %}{% endif %}
 {% endblock %}

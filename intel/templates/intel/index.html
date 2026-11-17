@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% load market_extras %}
+{% block title %}Intel · QF-gate{% endblock %}
+{% block main_attrs %} style="max-width:1400px"{% endblock %}
+{% block head %}<style>
+  .two { display:grid; grid-template-columns:repeat(auto-fit, minmax(420px, 1fr)); gap:16px; }
+  .news li { margin:4px 0; } .news { padding-left:16px; margin:6px 0; }
+  .src { font-size:12px; }
+  td.wrap { white-space:normal; }
+</style>{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">Intel <span class="muted" style="font-size:14px">news, macro, AI briefs (roadmap Phase 7). Context and reasoning only: nothing here places a trade.</span></h2>
+  <div class="grid">
+    <div class="stat"><span class="muted">AI provider</span><b>{{ ai.provider }}</b><span class="muted mono">{{ ai.model|default:"no model" }}{% if ai.quick_model != ai.model %} · quick {{ ai.quick_model }}{% endif %}</span></div>
+    <div class="stat"><span class="muted">AI spend today</span><b>${{ ai.spent|floatformat:3 }}</b><span class="muted">of ${{ ai.budget|floatformat:2 }} cap{% if ai.enabled and not ai.priced %} · <span class="warn">price unknown: set INTEL_LLM_PRICE_IN / _OUT</span>{% endif %}</span></div>
+    <div class="stat"><span class="muted">AI calls today</span><b>{{ ai.calls }}</b><span class="muted">of {{ ai.max_calls }} allowed</span></div>
+    <div class="stat"><span class="muted">Brief scorecard</span><b>{{ score.settled }} settled</b><span class="muted">{{ score.pending }} waiting for their horizon</span></div>
+    <div class="stat"><span class="muted">AI filter (7.7)</span><b class="{% if earned.ok %}ok{% else %}muted{% endif %}">{% if earned.ok %}earned{% else %}not earned{% endif %}</b><span class="muted">{{ earned.why }}</span></div>
+  </div>
+  {% if not ai.enabled %}<p class="muted" style="margin-bottom:0">AI briefs are off. To switch them on, set <span class="mono">INTEL_LLM_PROVIDER</span> in <span class="mono">.env</span>
+    (anthropic, openai, openai_compatible or ollama) plus its key or base URL, and restart. News and the macro panel work without it.</p>{% endif %}
+</div>
+
+{% if ai.enabled %}
+<div class="card">
+  <h3 style="margin-top:0">New AI brief</h3>
+  <form method="post" action="{% url 'intel:brief_create' %}" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">{% csrf_token %}
+    <p><label>Coin</label><input type="text" name="symbol" placeholder="e.g. SOL" list="coins" style="width:120px" required></p>
+    <datalist id="coins">{% for c in coins %}<option value="{{ c.gate_currency|default:c.symbol }}">{{ c.name }}</option>{% endfor %}</datalist>
+    <p><label>Quote</label><input type="text" name="quote" value="USDT" style="width:80px"></p>
+    <p><label>Exchange (price data)</label><select name="exchange" style="width:auto">{% for k, n in exchanges %}<option value="{{ k }}">{{ n }}</option>{% endfor %}</select></p>
+    <p><button class="btn primary">Run brief</button></p>
+  </form>
+  <p class="muted" style="font-size:12px;margin-bottom:0">About 11 AI calls (4 analysts, bull + bear, research manager, 3 risk views, portfolio manager), a few minutes.
+    For a stored coin, open it from its Market or coin page instead: the brief then also gets PDH / PDL, order flow and funding.</p>
+</div>
+{% endif %}
+
+<div class="two">
+<div class="card scroll">
+  <h3 style="margin-top:0">AI briefs</h3>
+  <table>
+    <thead><tr><th>When (UTC)</th><th>Coin</th><th>Rating</th><th class="num">Price</th><th class="num">Return</th><th class="num">vs BTC</th><th class="num">Cost</th><th></th></tr></thead>
+    <tbody>{% for b in briefs %}
+      <tr><td class="mono">{{ b.created_at|date:"m-d H:i" }}</td><td class="mono"><b>{{ b.symbol }}</b>/{{ b.quote }} <span class="muted">{{ b.exchange }}</span></td>
+        <td>{% if b.status == "done" %}<span class="badge {% if b.rating == 'Buy' or b.rating == 'Overweight' %}ok{% elif b.rating == 'Sell' or b.rating == 'Underweight' %}err{% elif b.rating == 'Review' %}warn{% endif %}">{{ b.rating }}</span>{% else %}<span class="badge {% if b.status == 'failed' %}err{% else %}warn{% endif %}">{{ b.get_status_display }}</span>{% endif %}</td>
+        <td class="num mono">{% if b.price %}{{ b.price|fprice }}{% else %}–{% endif %}</td>
+        <td class="num">{% if b.ret_pct is not None %}{{ b.ret_pct|floatformat:2 }}%{% elif b.status == "done" %}<span class="muted">due {{ b.due_at|date:"m-d H:i" }}</span>{% endif %}</td>
+        <td class="num {% if b.alpha_pct > 0 %}ok{% elif b.alpha_pct < 0 %}err{% endif %}">{% if b.alpha_pct is not None %}{{ b.alpha_pct|floatformat:2 }}%{% endif %}</td>
+        <td class="num muted">${{ b.cost_usd|floatformat:3 }}</td><td><a href="{% url 'intel:brief_detail' b.pk %}">open</a></td></tr>
+    {% empty %}<tr><td colspan="8" class="muted">No briefs yet.</td></tr>{% endfor %}</tbody>
+  </table>
+  <h4 style="margin-bottom:4px">Scorecard (settled briefs, all made live)</h4>
+  <table>
+    <thead><tr><th>Rating</th><th class="num">Settled</th><th class="num">Avg return</th><th class="num">Avg vs BTC</th><th class="num">Right</th></tr></thead>
+    <tbody>{% for r in score.by_rating %}<tr><td>{{ r.rating }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.avg_ret|floatformat:2 }}%</td>
+      <td class="num {% if r.avg_alpha > 0 %}ok{% elif r.avg_alpha < 0 %}err{% endif %}">{{ r.avg_alpha|floatformat:2 }}%</td>
+      <td class="num">{% if r.hit_pct is not None %}{{ r.hit_pct|floatformat:0 }}%{% else %}–{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="5" class="muted">Nothing settled yet. A brief is scored once its horizon (INTEL_BRIEF_HORIZON_HOURS, default 24 h) has passed.</td></tr>{% endfor %}</tbody>
+  </table>
+  {% if score.directional %}<p class="muted" style="font-size:13px">Edge (direction × alpha, average over {{ score.directional }} directional briefs):
+    <b class="{% if score.edge > 0 %}ok{% else %}err{% endif %}">{{ score.edge|floatformat:2 }}</b> · right {{ score.hit_pct|floatformat:0 }}% of the time.
+    Positive edge means following the ratings beat simply holding BTC.</p>{% endif %}
+</div>
+
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h3 style="margin:0">Macro &amp; prediction markets</h3>
+    <form method="post" action="{% url 'intel:macro_refresh' %}" style="margin-left:auto">{% csrf_token %}<button class="btn">Refresh</button></form>
+  </div>
+  <p class="muted" style="font-size:12px;margin:4px 0">Fetched {{ macro.fetched_at }}; refreshed hourly. Information only.</p>
+  <table>{% for f in macro.fred %}
+    <tr><td class="wrap">{{ f.label }}</td><td class="num"><b>{{ f.value }}</b></td><td class="num {% if f.change > 0 %}ok{% elif f.change < 0 %}err{% endif %}">{% if f.change > 0 %}+{% endif %}{{ f.change|floatformat:2 }} <span class="muted">/ month</span></td><td class="muted mono">{{ f.date }}</td></tr>
+  {% endfor %}
+  {% if macro.crypto.btc_dominance %}
+    <tr><td>Crypto market cap, 24h change</td><td class="num"><b>{{ macro.crypto.mcap_change_24h_pct|floatformat:2 }}%</b></td><td class="num muted">${{ macro.crypto.total_mcap_usd|floatformat:0 }}</td><td class="muted mono">{{ macro.crypto.date }}</td></tr>
+    <tr><td>BTC / ETH dominance</td><td class="num"><b>{{ macro.crypto.btc_dominance|floatformat:1 }}%</b></td><td class="num">{{ macro.crypto.eth_dominance|floatformat:1 }}%</td><td></td></tr>
+  {% endif %}</table>
+  {% if macro.polymarket %}<h4 style="margin-bottom:4px">Polymarket: most-traded crypto questions</h4>
+  <table>{% for p in macro.polymarket %}<tr><td class="wrap">{% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.question }}</a>{% else %}{{ p.question }}{% endif %}</td>
+    <td class="num"><b>{{ p.yes_pct|floatformat:0 }}%</b> {{ p.outcome }}</td><td class="muted mono">ends {{ p.end }}</td></tr>{% endfor %}</table>{% endif %}
+  {% for k, e in macro.errors.items %}<p class="warn" style="font-size:12px;margin:4px 0">{{ k }}: {{ e }}</p>{% endfor %}
+</div>
+</div>
+
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h3 style="margin:0">News &amp; sentiment</h3>
+    <form method="get" style="display:flex;gap:6px"><input type="text" name="q" value="{{ q }}" placeholder="Coin, e.g. SOL" style="width:140px"><button class="btn">Filter</button>{% if q %}<a class="btn" href="{% url 'intel:index' %}">All</a>{% endif %}</form>
+    <form method="post" action="{% url 'intel:news_refresh' %}" style="margin-left:auto">{% csrf_token %}<button class="btn">Refresh news now</button></form>
+  </div>
+  <p class="src muted">{% for name, s in sources.items %}<span class="{% if s.ok %}ok{% else %}err{% endif %}">{{ name }}{% if s.ok %} ({{ s.items }}){% else %}: {{ s.error }}{% endif %}</span>{% if not forloop.last %} · {% endif %}{% empty %}Not fetched yet: press Refresh news now (the worker also fetches every 30 minutes).{% endfor %}</p>
+  <p class="muted" style="font-size:13px">{{ mood.total }} items{% if q %} mentioning {{ q }} (last 30 days){% endif %}: <span class="ok">{{ mood.bullish }} bullish</span>, <span class="err">{{ mood.bearish }} bearish</span>, {{ mood.neutral }} neutral.
+    Labels are a simple bullish / bearish word count, not a model: a rough mood only.</p>
+  <ul class="news">{% for it in items %}
+    <li><span class="badge {% if it.sentiment == 'bullish' %}ok{% elif it.sentiment == 'bearish' %}err{% endif %}">{{ it.sentiment }}</span>
+      {% if it.url %}<a href="{{ it.url }}" target="_blank" rel="noopener">{{ it.title }}</a>{% else %}{{ it.title }}{% endif %}
+      <span class="muted src">{{ it.source }} · seen {{ it.first_seen|date:"m-d H:i" }} UTC</span></li>
+  {% empty %}<li class="muted">No news yet.</li>{% endfor %}</ul>
+</div>
+
+{% if ai.recent %}
+<div class="card scroll">
+  <h3 style="margin-top:0">Recent AI calls</h3>
+  <table><thead><tr><th>When (UTC)</th><th>Model</th><th>Purpose</th><th class="num">In</th><th class="num">Out</th><th class="num">Cost</th><th class="num">Time</th><th></th></tr></thead>
+    <tbody>{% for c in ai.recent %}<tr><td class="mono">{{ c.created_at|date:"m-d H:i:s" }}</td><td class="mono">{{ c.model }}</td><td>{{ c.purpose }}</td>
+      <td class="num">{{ c.input_tokens }}</td><td class="num">{{ c.output_tokens }}</td><td class="num">${{ c.cost_usd|floatformat:4 }}</td><td class="num">{{ c.duration_ms }} ms</td>
+      <td>{% if c.cached %}<span class="badge">cache</span>{% elif not c.ok %}<span class="badge err" title="{{ c.error }}">error</span>{% endif %}</td></tr>{% endfor %}</tbody></table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,29 @@
+{# Trade journal card: loads the journal fragment after the page (it reads candles). Needs: kind ("backtest" | "paper" | "bot"), pk #}
+<div class="card scroll" id="journal" data-url="{% url 'trading:journal' kind pk %}">
+  <h3 style="margin-top:0">Trade journal</h3>
+  <p class="muted" style="margin:0">Reviewing the trades…</p>
+</div>
+<script>
+(function () {
+  const box = document.getElementById('journal');
+  let h = '';
+  try { h = localStorage.getItem('qf-journal-h') || ''; } catch (e) {}
+  async function load() {
+    try {
+      const r = await fetch(box.dataset.url + (h ? '?h=' + h : ''), { credentials: 'same-origin' });
+      box.innerHTML = r.ok ? await r.text() : '<h3 style="margin-top:0">Trade journal</h3><p class="err">Could not load the journal (HTTP ' + r.status + ').</p>';
+    } catch (e) {
+      box.innerHTML = '<h3 style="margin-top:0">Trade journal</h3><p class="err">Could not load the journal: ' + e + '</p>';
+    }
+  }
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-h]');
+    if (!b) return;
+    h = b.dataset.h;
+    try { localStorage.setItem('qf-journal-h', h); } catch (err) {}
+    box.querySelectorAll('button[data-h]').forEach(x => x.classList.toggle('active', x === b));
+    load();
+  });
+  load();
+})();
+</script>

@@ -288,6 +288,7 @@ def paper_detail(request, pk: int):
         "breakdowns": report.breakdowns(trades, starting), "groups": report.GROUPS,
         "export_url": reverse("trading:paper_export", args=[s.pk]),
         "blocked": st.get("blocked") or {},
+        "ai_filter": _ai_filter(s.risk, "paper"),
         "chart": {"interval": s.interval, "start": int((s.started_at - timedelta(days=1)).timestamp()), "end": None,
                   "coin": s.config.coin_id, "live": s.status == PaperSession.Status.RUNNING},
     })
@@ -396,6 +397,7 @@ def bot_detail(request, pk: int):
         "model_pnl": sum(t.pnl for t in model), "model_trades": len(model),
         "unreal": (last - pos["avg"]) * pos["qty"] if pos and last else None,
         "pending": eng.get("pending"), "control": TradingControl.get(),
+        "ai_filter": _ai_filter(bot.risk, bot.mode),
     })
 
 
@@ -572,3 +574,37 @@ def api_ingest(request):
     new = signals_share.ingest(source, items)
     sent = signals_share.dispatch()
     return JsonResponse({"stored": len(new), "orders": sent})
+
+
+from django.http import Http404  # noqa: E402
+
+from . import journal as journal_mod  # noqa: E402
+
+
+@login_required
+def journal_partial(request, kind: str, pk: int):
+    """Trade journal (roadmap 7.1) for a backtest, paper session or bot, as an HTML fragment."""
+    if kind == "backtest":
+        obj = get_object_or_404(BacktestRun.objects.select_related("config__coin"), pk=pk)
+        trades = obj.trades.all()
+    elif kind == "paper":
+        obj = get_object_or_404(PaperSession.objects.select_related("config__coin"), pk=pk)
+        trades = obj.trades.all()
+    elif kind == "bot":
+        obj = get_object_or_404(Bot.objects.select_related("config__coin"), pk=pk)
+        trades = obj.model_trades.all()
+    else:
+        raise Http404
+    try:
+        horizon = int(request.GET.get("h") or journal_mod.DEFAULT_HORIZON)
+    except ValueError:
+        horizon = journal_mod.DEFAULT_HORIZON
+    j = journal_mod.build(obj.config.coin, obj.interval, trades, horizon, cache_key=f"{kind}:{pk}")
+    return render(request, "trading/_journal.html", {"j": j, "s": j["summary"]})
+
+
+def _ai_filter(risk, mode):
+    """7.7 AI filter status for the paper / bot page (None when the strategy doesn't use it)."""
+    from intel.gate import status
+
+    return status(risk, mode)

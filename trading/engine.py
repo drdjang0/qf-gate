@@ -126,6 +126,9 @@ class Engine:
         self.funding_paid: float = st.get("funding_paid", 0.0)
         self.liquidations: int = st.get("liquidations", 0)
         self.bars: deque[Bar] = deque((Bar(**b) for b in st.get("bars", [])), maxlen=max(2, strategy.lookback))
+        # Optional outside veto on NEW entries, set only by paper sessions / dry-run bots (e.g. the 7.7 AI filter):
+        # gate(bar, signal) -> reason string to block, or None. Never saved; backtests and sweeps never set it.
+        self.entry_gate = None
 
     # -- persistence ----------------------------------------------------------
     def state(self) -> dict:
@@ -335,6 +338,8 @@ class Engine:
                     self.blocked[self.lock_reason] = self.blocked.get(self.lock_reason, 0) + 1
                 elif not self._flow_ok(bar, -1 if sig.action == "short" else 1):
                     self.blocked["order-flow filter"] = self.blocked.get("order-flow filter", 0) + 1
+                elif self.entry_gate is not None and (why := self.entry_gate(bar, sig)):
+                    self.blocked[why] = self.blocked.get(why, 0) + 1
                 elif self.pending is None:  # a resting limit order stays until it fills or expires
                     order = asdict(sig)
                     if order.get("limit") is None and self.risk["entry_order"] == "limit":

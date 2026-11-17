@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% load market_extras %}
+{% block title %}Brief #{{ b.pk }} {{ b.symbol }} · QF-gate{% endblock %}
+{% block head %}{% if b.status == "queued" or b.status == "running" %}<meta http-equiv="refresh" content="5">{% endif %}
+<style> .rep { white-space:pre-wrap; font-size:14px; } details { margin:6px 0; } summary { cursor:pointer; font-weight:600; } </style>{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin:0">AI brief #{{ b.pk }} · {{ b.symbol }}/{{ b.quote }} <span class="muted" style="font-size:14px">{{ b.exchange }} · {{ b.created_at|date:"Y-m-d H:i" }} UTC · next {{ b.horizon_hours }} h</span></h2>
+  {% if b.status == "done" %}
+    <p style="margin:10px 0"><span class="badge {% if score > 0 %}ok{% elif score < 0 %}err{% elif b.rating == 'Review' %}warn{% endif %}" style="font-size:18px">{{ b.rating }}</span>
+      {% if b.plan.confidence %}<span class="muted">confidence {{ b.plan.confidence }}</span>{% endif %}</p>
+    <p>{{ b.summary }}</p>
+    <div class="grid">
+      <div class="stat"><span class="muted">Price at the brief</span><b class="mono">{{ b.price|fprice }}</b></div>
+      {% if b.plan.entry %}<div class="stat"><span class="muted">Entry</span><b class="mono">{{ b.plan.entry|fprice }}</b></div>{% endif %}
+      {% if b.plan.stop %}<div class="stat"><span class="muted">Stop</span><b class="mono">{{ b.plan.stop|fprice }}</b></div>{% endif %}
+      {% if b.plan.target %}<div class="stat"><span class="muted">Target</span><b class="mono">{{ b.plan.target|fprice }}</b></div>{% endif %}
+      <div class="stat"><span class="muted">Outcome after {{ b.horizon_hours }} h</span>
+        {% if b.settled_at %}<b class="{% if b.alpha_pct > 0 %}ok{% else %}err{% endif %}">{{ b.ret_pct|floatformat:2 }}%</b><span class="muted">vs BTC {{ b.alpha_pct|floatformat:2 }}% · settled {{ b.settled_at|date:"m-d H:i" }}</span>
+        {% else %}<b class="muted">waiting</b><span class="muted">due {{ b.due_at|date:"Y-m-d H:i" }} UTC</span>{% endif %}</div>
+      <div class="stat"><span class="muted">AI calls / cost</span><b>{{ b.calls }}</b><span class="muted">${{ b.cost_usd|floatformat:3 }}</span></div>
+    </div>
+    {% if b.plan.key_risks %}<h4 style="margin-bottom:4px">Key risks</h4><ul style="margin-top:0">{% for r in b.plan.key_risks %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
+    {% if b.checks.dropped_levels or b.checks.unverified_numbers %}
+      <div class="card" style="border-color:var(--warn);margin:8px 0">
+        <b class="warn">Grounding checks</b>
+        {% for d in b.checks.dropped_levels %}<div class="muted">Dropped: {{ d }}</div>{% endfor %}
+        {% if b.checks.unverified_numbers %}<div class="muted">Numbers in the summary not found in the fact sheet (treat with suspicion): <span class="mono">{{ b.checks.unverified_numbers|join:", " }}</span></div>{% endif %}
+      </div>
+    {% else %}<p class="muted" style="font-size:13px">Grounding checks passed: every price in the summary is in the fact sheet, and the levels sit on the right side of the price.</p>{% endif %}
+  {% elif b.status == "failed" %}
+    <p class="err">Failed: {{ b.error }}</p>
+  {% else %}
+    <p class="warn">{{ b.get_status_display }}: {{ b.progress }}… <span class="muted">(this page refreshes every 5 s; a brief takes a few minutes)</span></p>
+  {% endif %}
+  <p class="muted" style="font-size:12px;margin-bottom:0">Advisory only. A brief never places an order and is never used in backtests or sweeps. It is scored after its horizon on the Intel page.</p>
+</div>
+
+{% if analysts or debate %}
+<div class="card">
+  <h3 style="margin-top:0">How the team got there</h3>
+  {% for k, txt in analysts %}<details><summary>{{ k|capfirst }} analyst</summary><div class="rep">{{ txt }}</div></details>{% endfor %}
+  {% for d in debate %}<details><summary>{{ d|truncatechars:24 }}</summary><div class="rep">{{ d }}</div></details>{% endfor %}
+  {% if manager %}<details><summary>Research manager</summary><div class="rep">{{ manager }}</div></details>{% endif %}
+  {% for k, txt in risk.items %}<details><summary>{{ k|capfirst }} risk view</summary><div class="rep">{{ txt }}</div></details>{% endfor %}
+  {% if final_raw %}<details><summary>Portfolio manager (raw answer)</summary><div class="rep mono">{{ final_raw }}</div></details>{% endif %}
+</div>
+{% endif %}
+{% if facts %}
+<div class="card"><details><summary>Fact sheet (everything the agents were given)</summary><div class="rep mono" style="font-size:12px">{{ facts }}</div></details></div>
+{% endif %}
+{% endblock %}

@@ -66,6 +66,7 @@
 </div>
 
 {% include "trading/_breakdowns.html" %}
+{% include "trading/_journal_card.html" with kind="backtest" pk=run.pk %}
 
 <div class="card scroll">
   <h3 style="margin-top:0">Trades ({{ trades|length }})</h3>

@@ -5,6 +5,8 @@ narrowed. Ideas taken from other projects are re-implemented in our own code.
 
 - **freqtrade** is GPL-3 licensed: we adopt its *ideas* only and never copy its code.
 - **Cryptozonescanner** gave us the zone-revisit idea, rebuilt here forward-only and to the minute.
+- **TradingAgents** (Apache-2.0) gave us the multi-agent analyst / bull-bear debate idea (Phase 7). Its
+  licence would allow reusing code with attribution; we still re-implement it around our own data.
 
 Status: ✅ done · 🔜 next · ⏳ planned
 
@@ -33,6 +35,8 @@ Status: ✅ done · 🔜 next · ⏳ planned
 | Pages | Coin page chart, **Market page** (chart + live order book + trades + day-by-day history), **Zones page** (forward-only zones, hotspots, heatmap, export) |
 | Strategies | Plug-in API; PDH breakout, PDL sweep & reclaim, **Zone hotspot bounce/breakout**; per-strategy warm-up |
 | Testing tools | Backtests with metrics, **parameter sweeps** with out-of-sample check and heatmap, **paper trading** on live bars |
+| Phase 7 | **Intel** tab: news feed, macro / Polymarket panel, AI briefs (multi-agent, grounded, cost-capped), brief scorecard + memory, AI filter for paper / dry-run; Trade journal on result pages |
+| Discovery | **Coin auto-fill** (chain, contract, icon, exchanges from the symbol), **Scanner** (any coin on 7 exchanges, 24h–90d zones / hotspots / heatmap, nothing stored), **multi-exchange Screener** (one exchange or all combined, venue shares, price-gap warning) |
 | Phase 6 | Futures backtests (shorts, leverage, liquidation, real funding), mirrored short strategies, adaptive ML strategy, signal sharing between instances |
 | Phase 5 | Order flow (buy/sell volume, delta, CVD, entry filter), signal + indicator plots and CSV, coin screener, portfolio backtests, Binance comparison |
 | Phase 4 | Dry-run / live bots (order-book fills, real-time stops), order log with slippage, risk limits, kill switch, promotion gate, Telegram + webhooks, VPS kit |
@@ -98,7 +102,8 @@ server. Telegram and webhooks work as soon as their tokens/URLs are set.
 A per-price-level **footprint is not built yet**: it needs raw trades stored per bar, which we don't keep.
 Portfolio runs are backtests only (no multi-coin paper/bot sessions yet). The age filter of the screener
 is not available (Gate gives no reliable listing date). Other exchanges: Binance, read-only, matched by
-ticker and checked by price agreement.
+ticker and checked by price agreement. Since then the Scanner and Screener read Gate.io, Binance, OKX, Bybit,
+KuCoin, MEXC and Bitget (read-only, nothing stored; OKX is unreachable from the dev PC's network).
 
 ## ✅ Phase 6: Advanced
 
@@ -119,9 +124,61 @@ Signal sharing works between instances (token API, push or poll); follow bots co
 
 ---
 
+## ✅ Phase 7: AI analysis layer (ideas from TradingAgents)
+
+Add context and readable reasoning **on top of** the existing rules-based platform. Nothing here replaces
+a strategy, the engine or a check; every item is off until switched on.
+
+**Phase 7 ground rules (in addition to the ones at the top):**
+- **Advisory first.** An AI brief never places an order. It can only become a bot filter (7.7) after its
+  scorecard (7.6) has shown, on decisions made live, that it helps.
+- **No LLM in backtests or sweeps.** A language model was trained on data from after any historical date,
+  so it can quietly "know" the future. No setting removes that, so LLM output is judged only on decisions
+  made in real time and settled afterwards.
+- **Point-in-time inputs.** News and sentiment are stored with the time we first saw them; nothing published
+  later may reach an earlier decision (same look-ahead test as strategies).
+- **Grounded numbers.** Prices, levels and stats in a brief come from our own data and are checked against it;
+  the model writes reasoning, not numbers.
+- **Costs capped.** Every LLM call is logged with tokens and cost, with a daily spend limit. Without an API key
+  the whole phase stays hidden and the platform works exactly as today.
+
+| # | Feature | Source | What it gives us | Done when | Effort |
+|---|---|---|---|---|---|
+| ✅ 7.1 | **Trade journal with reflection** | TradingAgents memory log | Every closed backtest / paper / bot trade is settled N bars after its exit: what price did next (missed profit, avoidable loss, best and worst excursion), grouped by strategy, entry tag and exit reason, with a plain-language "what worked / what didn't" summary. No LLM needed. | Settlement uses only bars after the exit; summary matches hand-computed sample; visible on backtest, paper and bot pages. | S–M |
+| ✅ 7.2 | **News and sentiment feed** | TradingAgents news / sentiment analysts | Crypto headlines and social posts per coin (free sources first: RSS, Reddit, CoinGecko), stored with first-seen time, de-duplicated, shown on the Market and Scanner pages with a simple bullish / bearish / neutral count. | Items carry fetch time; a strategy-facing accessor returns only items seen before a bar's close (look-ahead test); feed survives a source being down. | M |
+| ✅ 7.3 | **LLM provider layer** | TradingAgents llm_clients | One small interface for Anthropic, OpenAI and any OpenAI-compatible endpoint (incl. a local Ollama model, no cost), keys in `.env`, retries, response cache, per-call token / cost log and a daily spend cap. | Fake-provider tests; cap blocks calls once reached; nothing sent when no key is set. | S–M |
+| ✅ 7.4 | **AI coin brief (multi-agent debate)** | TradingAgents analyst → researcher → trader → risk → manager graph | A **Brief** button on the Scanner and coin pages. Analysts read *our* data: technical (zones, hotspots, PDH/PDL, order flow, funding), market structure (where it trades, spreads, volume shares), news / sentiment (7.2) and macro (7.5). A bull and a bear researcher debate, three risk views (aggressive / neutral / conservative) challenge the plan, and a manager gives a 5-tier rating (Buy / Overweight / Hold / Underweight / Sell, or Review when unreadable) with reasoning and suggested entry / stop / target. Runs as a job; saved with all its inputs. | Every number in the brief is traceable to our data snapshot; unreadable output becomes Review, never Hold; runs through the job queue with progress. | L |
+| ✅ 7.5 | **Macro and prediction-market panel** | TradingAgents FRED / Polymarket vendors | Context panel: US rates and dollar index (FRED, free key), crypto-related Polymarket odds, BTC dominance. Information only; also an input to 7.4. | Values dated and cached; panel degrades gracefully without keys. | S |
+| ✅ 7.6 | **Brief scorecard and memory** | TradingAgents decision-quality backtest + reflection | Each saved brief is settled later against the coin's realised return and against BTC (alpha), grouped by rating, so we learn whether the briefs are any good. The latest settled briefs and lessons for the same coin are fed into its next brief. Only briefs made live count. | Scorecard per rating and per coin; settlement uses only prices after the brief; memory injection tested. | M |
+| ✅ 7.7 | **AI filter for paper / dry-run bots (optional)** | our idea | A strategy option "only enter when the latest brief for this coin is at least X and no older than N hours". Paper and dry-run only, clearly marked as not backtestable. | Only offered once 7.6 shows a positive edge over enough briefs; blocked entries counted with reason "AI filter". | S |
+
+**Phase 7 status notes (honest):**
+- **7.1 Trade journal:** a card on every backtest, paper and bot page. On the existing PDL-reclaim backtests it
+  found 42–50% of stop-outs came back past the entry within 12 bars.
+- **7.2 News:** CoinDesk, Cointelegraph and Decrypt RSS work (94 items on the first fetch). Reddit refuses anonymous
+  apps (HTTP 403); that is shown and skipped. Sentiment is a word count, not a model. Items are point-in-time by
+  first-seen time.
+- **7.3 LLM layer:** Anthropic via the official SDK (default `claude-opus-5-5`, refusal fallback on), OpenAI,
+  any OpenAI-compatible server, or a local Ollama model. It has a daily spend cap, a daily call cap, a response
+  cache and a log of every call. It stays off until `INTEL_LLM_PROVIDER` is set.
+- **7.4 AI brief:** 11 calls per brief (4 analysts, bull, bear, research manager, 3 risk views, portfolio manager)
+  over a fact sheet built from our own data. It ran end to end on real BTC data with a stand-in model, an estimated
+  ~$0.20 per brief on Opus 5.5. It has **not yet run against a real model**: no API key is set on this PC.
+- **7.5 Macro panel:** live (FRED rates and dollar index, CoinGecko dominance, Polymarket crypto odds).
+- **7.6 Scorecard:** briefs settle after 24 h against the coin's and BTC's price. There are no settled briefs yet.
+- **7.7 AI filter:** paper and dry-run only. It stays inactive until 20 settled directional briefs show a positive
+  edge and a hit rate above 50%.
+
+**Not adopted:** TradingAgents' stock-specific parts (SEC fundamentals, insider trades, StockTwits) and
+Yahoo daily prices: our 1-minute Gate.io data is better for crypto.
+
+---
+
 ## Suggested order
 
 1. **Phase 3.5** in order: 3.5.1 → 3.5.2 → 3.5.4, then 3.5.5–3.5.7 (3.5.3 alongside 3.5.2).
 2. **Phase 3.6**: 3.6.3 and 3.6.1 first (cheap, strengthen every strategy), then 3.6.5, 3.6.2, 3.6.4, 3.6.6.
 3. **Phase 4** once at least one strategy passes walk-forward and a paper period.
 4. **Phases 5 and 6** in the order listed.
+5. **Phase 7**: 7.1 first (no cost, useful on its own), then 7.2 and 7.3, then 7.4 with 7.5, then 7.6.
+   7.7 only if the 7.6 scorecard earns it.

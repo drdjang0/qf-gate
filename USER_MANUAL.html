@@ -1,0 +1,993 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QF-gate User Manual</title>
+<style>
+:root {
+  --bg: #f7f8fa; --panel: #ffffff; --text: #1d2330; --muted: #5d6677; --line: #dde1e8;
+  --accent: #2563eb; --accent-soft: #e8efff; --ok: #15803d; --ok-soft: #e7f6ec;
+  --warn: #a16207; --warn-soft: #fdf5e1; --err: #b91c1c; --code: #eef0f4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1218; --panel: #171b23; --text: #e4e7ee; --muted: #9aa3b5; --line: #2a303c;
+    --accent: #6ea0ff; --accent-soft: #1c2742; --ok: #4ade80; --ok-soft: #13291b;
+    --warn: #facc15; --warn-soft: #2b2510; --err: #f87171; --code: #222833;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1218; --panel: #171b23; --text: #e4e7ee; --muted: #9aa3b5; --line: #2a303c;
+  --accent: #6ea0ff; --accent-soft: #1c2742; --ok: #4ade80; --ok-soft: #13291b;
+  --warn: #facc15; --warn-soft: #2b2510; --err: #f87171; --code: #222833;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--accent); }
+.layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); max-width: 1280px; margin: 0 auto; }
+nav.toc { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 20px 16px; border-right: 1px solid var(--line); background: var(--panel); }
+nav.toc .brand { font-weight: 700; font-size: 18px; margin-bottom: 4px; }
+nav.toc .sub { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+nav.toc input { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; margin-bottom: 12px; }
+nav.toc ol { list-style: none; padding: 0; margin: 0; font-size: 13.5px; }
+nav.toc li a { display: block; padding: 3px 8px; border-radius: 6px; text-decoration: none; color: var(--text); }
+nav.toc li a:hover { background: var(--accent-soft); }
+nav.toc li.sub a { padding-left: 22px; color: var(--muted); font-size: 12.5px; }
+nav.toc .theme { margin-top: 14px; font-size: 12px; }
+nav.toc .theme button { font: inherit; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; }
+main { padding: 28px 40px 80px; min-width: 0; }
+h1 { font-size: 30px; margin: 0 0 6px; }
+h2 { font-size: 23px; margin: 46px 0 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+h3 { font-size: 17.5px; margin: 26px 0 8px; }
+h4 { font-size: 15px; margin: 18px 0 6px; }
+p, li { max-width: 860px; }
+.lead { color: var(--muted); font-size: 16px; max-width: 860px; }
+.muted { color: var(--muted); }
+code { font: 13px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin: 12px 0; max-width: 900px; }
+.note, .tip, .warn { border-radius: 8px; padding: 10px 14px; margin: 12px 0; max-width: 860px; border-left: 4px solid; }
+.note { background: var(--accent-soft); border-color: var(--accent); }
+.tip { background: var(--ok-soft); border-color: var(--ok); }
+.warn { background: var(--warn-soft); border-color: var(--warn); }
+.tablewrap { overflow-x: auto; max-width: 940px; margin: 10px 0 16px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--panel); }
+th, td { text-align: left; vertical-align: top; padding: 7px 10px; border: 1px solid var(--line); }
+th { background: var(--code); font-weight: 600; white-space: nowrap; }
+td code { white-space: nowrap; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0; max-width: 940px; }
+.flow span.step { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 13.5px; }
+.flow span.step b { display: block; font-size: 13px; }
+.flow span.arrow { color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; max-width: 940px; }
+.grid2 .card { margin: 0; }
+.badge { display: inline-block; font-size: 11.5px; padding: 0 7px; border-radius: 99px; border: 1px solid var(--line); vertical-align: 1px; }
+.badge.ok { color: var(--ok); border-color: var(--ok); }
+.badge.err { color: var(--err); border-color: var(--err); }
+dl.gloss { max-width: 900px; }
+dl.gloss div { padding: 8px 0; border-bottom: 1px solid var(--line); }
+dl.gloss dt { font-weight: 650; }
+dl.gloss dd { margin: 2px 0 0; }
+dl.gloss dd .cat { color: var(--muted); font-size: 12px; }
+.hidden { display: none !important; }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.toc { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  nav.toc ol { columns: 2; }
+  main { padding: 20px 16px 60px; }
+}
+@media print { nav.toc { display: none; } .layout { display: block; } main { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <div class="brand">QF-gate manual</div>
+  <div class="sub">Every page, option, strategy, bot and job</div>
+  <input type="search" id="q" placeholder="Search the glossary…" aria-label="Search the glossary">
+  <ol>
+    <li><a href="#start">1. What QF-gate is</a></li>
+    <li><a href="#services">2. Running it (services)</a></li>
+    <li><a href="#workflow">3. The everyday workflow</a></li>
+    <li><a href="#tabs">4. The tabs (header)</a></li>
+    <li class="sub"><a href="#t-market">Market</a></li>
+    <li class="sub"><a href="#t-zones">Zones</a></li>
+    <li class="sub"><a href="#t-coins">Coins &amp; coin page</a></li>
+    <li class="sub"><a href="#t-screener">Screener</a></li>
+    <li class="sub"><a href="#t-scanner">Scanner</a></li>
+    <li class="sub"><a href="#t-intel">Intel (AI, news, macro)</a></li>
+    <li class="sub"><a href="#t-strategies">Strategies</a></li>
+    <li class="sub"><a href="#t-bots">Bots (Control)</a></li>
+    <li class="sub"><a href="#t-jobs">Jobs</a></li>
+    <li class="sub"><a href="#t-export">Export all &amp; Admin</a></li>
+    <li><a href="#data">5. Where the data comes from</a></li>
+    <li><a href="#engine">6. How the engine trades</a></li>
+    <li><a href="#strategies">7. The strategies</a></li>
+    <li><a href="#risk">8. Risk &amp; execution settings</a></li>
+    <li><a href="#testing">9. Backtest, sweep, paper, portfolio</a></li>
+    <li><a href="#metrics">10. Reading the results</a></li>
+    <li><a href="#bots">11. Bots: how they work</a></li>
+    <li><a href="#jobs">12. Jobs: what they do</a></li>
+    <li><a href="#alerts">13. Alerts &amp; signal sharing</a></li>
+    <li><a href="#commands">14. Commands &amp; settings</a></li>
+    <li><a href="#glossary">15. Glossary (A–Z)</a></li>
+    <li><a href="#faq">16. Troubleshooting</a></li>
+  </ol>
+  <div class="theme">Theme: <button type="button" id="theme">Auto</button></div>
+</nav>
+
+<main>
+<h1>QF-gate user manual</h1>
+<p class="lead">A personal crypto research and trading platform built on Gate.io. It stores exact 1-minute price history,
+finds the levels price reacts to, tests trading ideas on that history, and runs them on live prices: first simulated, and live only if you deliberately unlock it.</p>
+
+<div class="warn"><b>Read this first.</b> Nothing in QF-gate is financial advice. The research tools are honest by design (no look-ahead, real fees),
+and so far they show that the built-in strategies have <b>no proven edge</b>: for example, the zone strategy was profitable in 0 of 3 walk-forward folds and the ML strategy lost 84% on its defaults.
+Treat every result as something to test, not a promise.</div>
+
+<!-- ================================================================== -->
+<h2 id="start">1. What QF-gate is</h2>
+<p>QF-gate does five jobs, in this order:</p>
+<div class="grid2">
+  <div class="card"><b>1. Find coins</b><br>Screener (all pairs, any exchange) and Scanner (one coin in depth, any exchange) find candidates without storing anything.</div>
+  <div class="card"><b>2. Store exact history</b><br>Coins you add are identified by chain + contract, and their 1-minute candles are stored (up to a rolling year), with each day's high/low and the minute it happened.</div>
+  <div class="card"><b>3. Understand levels</b><br>Previous-day high/low (PDH/PDL), zones, hotspots and a heatmap show where price keeps reacting.</div>
+  <div class="card"><b>4. Test ideas</b><br>Strategies are replayed on stored history (backtests), tuned (sweeps), checked for cheating (look-ahead / warm-up checks) and tested over several coins (portfolio).</div>
+  <div class="card"><b>5. Run them live</b><br>Paper trading and dry-run bots act on live prices with simulated fills. Live trading uses real orders and is locked behind three switches and a checklist.</div>
+</div>
+<p><b>Gate.io is the exchange of record.</b> Coin identity, stored history, the live feed and all trading are on Gate.io. The other exchanges (Binance, OKX, Bybit, KuCoin, MEXC, Bitget) are used <b>read-only</b> for research in the Screener, the Scanner and Compare.</p>
+
+<!-- ================================================================== -->
+<h2 id="services">2. Running it: the three services</h2>
+<p>QF-gate is three programs that work together. The header shows a <b>green dot</b> for <b>worker</b> and <b>live</b> while they are running (a service is shown as down when it hasn't reported for 90 seconds).</p>
+<div class="tablewrap"><table>
+<tr><th>Service</th><th>Command</th><th>What it does</th><th>If it is stopped</th></tr>
+<tr><td><b>Web server</b></td><td><code>python manage.py runserver</code></td><td>The website you use at <code>http://localhost:8000</code>.</td><td>No pages.</td></tr>
+<tr><td><b>Worker</b></td><td><code>python manage.py run_worker</code></td><td>Runs <a href="#jobs">jobs</a> (sync, verify, backtests, sweeps, portfolios) and the schedule: incremental sync every 15 min, identity re-check daily, cleanup. Also steps paper sessions and bots every minute as a backup.</td><td>Buttons like <i>Sync</i> only queue a job; nothing runs. Pages warn you. Sweeps fall back to running inside the web server.</td></tr>
+<tr><td><b>Live stream</b></td><td><code>python manage.py stream_candles</code></td><td>Receives Gate.io's live 1-minute candles and trades over WebSocket (every ~2–4 s), fills gaps after a reconnect, updates daily levels, steps paper sessions and bots as each minute closes, and checks bot stops/targets on every price tick.</td><td>Charts stop moving; bots and paper trading fall back to the worker's once-a-minute step; a "stream outage" alert is sent.</td></tr>
+</table></div>
+<div class="note"><b>Login.</b> Every page except the login page needs an account. Create one with <code>python manage.py createsuperuser</code>. Anyone with an account can do everything, including starting bots, so only give accounts to people you trust.</div>
+
+<!-- ================================================================== -->
+<h2 id="workflow">3. The everyday workflow</h2>
+<div class="flow">
+  <span class="step"><b>Screener</b>shortlist</span><span class="arrow">→</span>
+  <span class="step"><b>Scanner</b>deep look</span><span class="arrow">→</span>
+  <span class="step"><b>Add coin</b>verify + store</span><span class="arrow">→</span>
+  <span class="step"><b>Market / Zones</b>study levels</span><span class="arrow">→</span>
+  <span class="step"><b>Strategy</b>configure</span><span class="arrow">→</span>
+  <span class="step"><b>Backtest · Checks · Sweep</b>test honestly</span><span class="arrow">→</span>
+  <span class="step"><b>Paper / Dry-run bot</b>live, simulated</span><span class="arrow">→</span>
+  <span class="step"><b>Live bot</b>only after the checklist</span>
+</div>
+<ol>
+  <li><b>Find:</b> in the <a href="#t-screener">Screener</a> filter for liquid, moving pairs; press <i>Scan</i> on interesting ones.</li>
+  <li><b>Judge:</b> in the <a href="#t-scanner">Scanner</a>, look at 30–90 days of zones, hotspots and where the coin trades. If it looks tradable, press <i>Add for monitoring</i>.</li>
+  <li><b>Add:</b> the <i>Add coin</i> form fetches chain, contract, icon and exchanges automatically; check the chain and Save. History download starts as a job.</li>
+  <li><b>Study:</b> on the <a href="#t-market">Market</a> page and its <a href="#t-zones">Zones</a> page, see the day history, PDH/PDL and hotspots.</li>
+  <li><b>Test:</b> create a <a href="#t-strategies">strategy</a>, run a backtest, run <i>checks</i>, then a sweep with out-of-sample and walk-forward.</li>
+  <li><b>Watch live:</b> start paper trading or a dry-run bot and leave it for days.</li>
+  <li><b>Go live (optional):</b> only when the promotion checklist is green and you have unlocked live trading.</li>
+</ol>
+
+<!-- ================================================================== -->
+<h2 id="tabs">4. The tabs in the header</h2>
+<p>Header, left to right: <b>QF-gate</b> (home = Coins), <b>Market</b>, <b>Coins</b>, <b>Screener</b>, <b>Scanner</b>, <b>Intel</b>, <b>Strategies</b>, <b>Bots</b>, <b>Jobs</b>, <b>Export all</b>, <b>Admin</b>, plus the worker / live status dots.</p>
+
+<h3 id="t-market">Market</h3>
+<p>An exchange-style view of one stored coin (pick it from the dropdown).</p>
+<ul>
+  <li><b>Ticker bar:</b> last price, 24h change, 24h high and low, 24h volume.</li>
+  <li><b>Candle chart:</b> timeframes 1m / 5m / 15m / 1h / 4h / 1d, built from stored 1-minute candles and updated every 5 s.
+    <ul>
+      <li>Dashed lines are <b>PDH/PDL</b> (previous day's high/low).</li>
+      <li>Solid lines are today's running high and low.</li>
+      <li><b>H</b> and <b>L</b> markers sit on the bar where each day's high and low were hit.</li>
+    </ul></li>
+  <li><b>Order flow box:</b> per-bar <b>delta</b> (taker buys minus taker sells) and <b>CVD</b> (cumulative delta).</li>
+  <li><b>Order book:</b> Gate.io's live asks and bids with running totals, depth bars and spread, refreshed every second. Use <i>grouping</i> to merge price levels and <i>depth</i> to show more rows. It is read live and not stored.</li>
+  <li><b>Market trades:</b> the latest trades on Gate.io, live.</li>
+  <li><b>Day-by-day history:</b> one row per day with:
+    <ul>
+      <li>open, high + time, low + time, close;</li>
+      <li>change, range and volume;</li>
+      <li>daily delta;</li>
+      <li>PDH and PDL, and whether the day broke them;</li>
+      <li>totals at the top.</li>
+    </ul>
+    Click a day to zoom the chart to it.</li>
+  <li><b>Zones</b> button: opens the Zones page for this coin.</li>
+</ul>
+
+<h3 id="t-zones">Zones (Market → Zones)</h3>
+<p>Shows the price levels that price keeps coming back to, measured honestly.</p>
+<ul>
+  <li><b>Zone:</b> every stored day's high and low becomes a zone, a band of ±<i>width</i>%. The width defaults to 1% and can be set from 0.1% to 5%.</li>
+  <li><b>Forward-only:</b> only days <i>after</i> a zone formed can touch it, so there is no hindsight.</li>
+  <li><b>Touch:</b> a later day touches a zone when its range overlaps the band. Trading straight through counts as a touch.
+    <ul>
+      <li>Each touch records the <b>first minute</b> price entered the zone.</li>
+      <li>Each touch has a <b>result</b>: <i>held</i> (closed back on the side it came from), <i>broke</i> (closed on the other side), <i>inside</i> (closed within the band) or <i>live</i> (today, not finished).</li>
+    </ul></li>
+  <li><b>Hotspots:</b> up to 8 non-overlapping bands where price returned on the most <i>distinct days</i>, drawn on the chart. Counting days rather than touches stops one choppy day from inflating a level.</li>
+  <li><b>Heatmap:</b> touches per day and per price band, so you can see where activity clusters over time.</li>
+  <li><b>Excel export:</b> sheets for Zones, Touches and Hotspots.</li>
+</ul>
+
+<h3 id="t-coins">Coins and the coin page</h3>
+<p><b>Coins</b> lists every coin you have added, with its last stored candle and sync status. <b>Add coin</b> opens the add form.</p>
+<h4>Add coin form</h4>
+<ul>
+  <li>Type the symbol (e.g. <code>SOL</code>) and press <b>Fetch details</b>. The form fills in:
+    <ul>
+      <li>name, chain and contract address (from Gate.io, using the coin's own primary chain);</li>
+      <li>whether the pair trades on Gate.io;</li>
+      <li>the icon and the list of exchanges that list it (from CoinGecko).</li>
+    </ul></li>
+  <li><b>Chain picker:</b> the primary chain is pre-selected. Pick another only if that is where you hold the token. Chains with deposits/withdrawals off are greyed.</li>
+  <li><b>Look up a contract address:</b> paste a contract and find which Gate.io currency it is.</li>
+  <li>On <b>Save</b>, the chain + contract is verified against Gate.io again. A look-alike ticker is rejected.</li>
+</ul>
+<h4>Coin page</h4>
+<ul>
+  <li><b>Chart</b> (as on the Market page) with PDH/PDL and H/L markers.</li>
+  <li><b>Sync:</b> queues a <a href="#jobs">sync job</a> to fetch new candles now. You don't normally need it, since the worker syncs every 15 min.</li>
+  <li><b>Verify:</b> re-checks the coin's identity on Gate.io (delisting, contract change).</li>
+  <li><b>Data quality:</b> per-day 1-minute coverage (how many of the day's 1,440 minutes are stored). <b>Repair gaps</b> re-fetches days with holes.</li>
+  <li><b>Refresh details:</b> re-fetches icon, exchanges and chains from CoinGecko.</li>
+  <li><b>Compare exchanges:</b> Gate.io vs Binance:
+    <ul>
+      <li>daily closes and volumes;</li>
+      <li>Binance's taker order flow;</li>
+      <li>matched by ticker, and flagged if the prices disagree (which would mean they may be different coins).</li>
+    </ul></li>
+  <li><b>Edit / Delete:</b> deleting removes the coin and all its stored candles.</li>
+</ul>
+
+<h3 id="t-screener">Screener: "which coins should I look at?"</h3>
+<p>Filters <b>every spot pair</b> on one exchange, or on all of them combined, using live 24h data (one request per exchange, cached 30 s). Nothing is stored.</p>
+<div class="tablewrap"><table>
+<tr><th>Option</th><th>Meaning / use</th></tr>
+<tr><td><b>Exchange</b></td><td>Gate.io, Binance, OKX, Bybit, KuCoin, MEXC, Bitget, or <b>All exchanges (combined)</b>. Changing it reloads the list.</td></tr>
+<tr><td><b>Quote</b></td><td>The currency pairs are priced in, usually <code>USDT</code>.</td></tr>
+<tr><td><b>Min 24h volume</b></td><td>Drop thin markets. Low volume means wide spreads and slippage on every trade. Default is 1,000,000.</td></tr>
+<tr><td><b>Max spread %</b></td><td>Gap between best bid and best ask. You lose roughly this on every round trip. Default 0.5%.</td></tr>
+<tr><td><b>24h range % (min–max)</b></td><td>(High − low) / low over 24h, which measures volatility. Range strategies need movement; very high values can mean a pump.</td></tr>
+<tr><td><b>Price (min–max)</b></td><td>Limit by price; 0 means no limit.</td></tr>
+<tr><td><b>24h change % (min–max)</b></td><td>Find gainers, losers, or flat coins.</td></tr>
+<tr><td><b>Listed on at least N exchanges</b></td><td>Combined mode only. Coins on many major exchanges are usually real, liquid coins.</td></tr>
+<tr><td><b>Blacklist</b></td><td>Comma-separated tickers to hide (e.g. stablecoins <code>USDC,FDUSD</code>). Remembered in your browser.</td></tr>
+<tr><td><b>Sort</b></td><td>Volume, 24h change, volatility (range), tightest spread, or most exchanges (combined mode).</td></tr>
+<tr><td><b>Show</b></td><td>How many rows (1–500).</td></tr>
+</table></div>
+<p><b>Combined mode</b> merges pairs by ticker:</p>
+<ul>
+  <li><b>Volume</b> is summed across all exchanges.</li>
+  <li><b>Price, change, spread and range</b> come from the exchange with the most volume, shown in bold.</li>
+  <li>The <b>Exchanges</b> column shows each venue's share of the volume.</li>
+  <li>The <b>Price gap</b> column shows how far apart the venues' prices are. A ⚠ above 5% usually means <i>different coins share the ticker</i>.</li>
+</ul>
+<p><b>Row buttons:</b></p>
+<ul>
+  <li><b>Scan</b> opens the Scanner on the same exchange (in combined mode, the top-volume one).</li>
+  <li><b>Add coin</b> appears only for tickers Gate.io lists, because coins are traded on Gate.io. Otherwise the row says <i>not on Gate.io</i>, and <i>added</i> means you already have it.</li>
+</ul>
+
+<h3 id="t-scanner">Scanner: "is this one coin worth monitoring?"</h3>
+<p>A deep look at one coin on any exchange, on demand. History is fetched live and not stored, so bad candidates cost nothing.</p>
+<div class="tablewrap"><table>
+<tr><th>Option</th><th>Meaning</th></tr>
+<tr><td><b>Symbol / Quote</b></td><td>e.g. <code>SOL</code> / <code>USDT</code>.</td></tr>
+<tr><td><b>Exchange</b></td><td>Which exchange's candles to analyse.</td></tr>
+<tr><td><b>Period</b></td><td>
+  <ul style="margin:0;padding-left:18px">
+    <li>24 hours: 15m candles</li>
+    <li>2 days: 30m</li>
+    <li>3 days and 7 days: 1h</li>
+    <li>15 days and 30 days: 4h</li>
+    <li>60 days and 90 days: 1d</li>
+  </ul>
+  That gives roughly 90–180 bars each time.</td></tr>
+<tr><td><b>Zone width</b></td><td>The ± band around each level, as on the Zones page.</td></tr>
+</table></div>
+<p><b>What it shows:</b></p>
+<ul>
+  <li><b>Chart and zones:</b> the same forward-only zone engine as the Zones page, with each bar's high and low as a level.</li>
+  <li><b>Hotspots</b> with their distance from the current price ("here" when price is inside one).</li>
+  <li><b>Heatmap.</b></li>
+  <li><b>Period stats:</b> change, high/low, range, volume, number of zones and touches, <b>held %</b>, and <b>position in range</b> (0% = at the period low, 100% = at the high).</li>
+  <li><b>Where it trades:</b> price, 24h change, volume share and difference from the median price on every exchange. It tells you whether Gate.io is a main market or a thin side venue.</li>
+</ul>
+<p>If the coin looks promising, <b>Add for monitoring</b> opens the Add coin form. From then on it gets stored history, the live feed and trading.</p>
+
+<h3 id="t-intel">Intel: news, macro and AI briefs</h3>
+<p>Context and reasoning on top of your data. Nothing here places a trade. News and macro work without any key; AI briefs need an AI provider (see below).</p>
+<ul>
+  <li><b>News &amp; sentiment:</b> headlines from CoinDesk, Cointelegraph and Decrypt.
+    <ul>
+      <li>Fetched every 30 minutes by the worker, or with <i>Refresh news now</i>.</li>
+      <li>Each item is stored with the time it was <b>first seen</b>, so nothing can leak backwards in time.</li>
+      <li>The bullish / bearish / neutral label is a simple word count: a rough mood, not a signal.</li>
+      <li>Filter by coin. The Market, Scanner and coin pages show the same card for their coin.</li>
+    </ul></li>
+  <li><b>Macro &amp; prediction markets:</b> refreshed hourly. Information only.
+    <ul>
+      <li>US Fed funds rate, 10-year yield and dollar index (FRED);</li>
+      <li>crypto market cap and BTC / ETH dominance (CoinGecko);</li>
+      <li>the most-traded crypto questions on Polymarket, with their odds.</li>
+    </ul></li>
+  <li><b>AI brief:</b> the <i>AI brief</i> button on a coin, or the form on the Intel page.
+    <ul>
+      <li>An analyst team reads a <b>fact sheet</b> built from QF-gate's own data: zones and hotspots, where it trades, PDH/PDL, order flow, funding, news, macro, and how earlier briefs on the coin turned out.</li>
+      <li>Four analysts (technical, market structure, news, macro) write reports.</li>
+      <li>A bull and a bear researcher debate, and a research manager rules.</li>
+      <li>Three risk views challenge the plan.</li>
+      <li>A portfolio manager gives a rating: <b>Buy / Overweight / Hold / Underweight / Sell</b>, with a summary, levels and key risks.</li>
+      <li>That is about 11 AI calls and a few minutes, roughly $0.20 on Claude Opus 5.5.</li>
+    </ul></li>
+  <li><b>Grounding checks:</b>
+    <ul>
+      <li>Levels on the wrong side of the price, or far outside the range, are dropped.</li>
+      <li>Any price in the summary that isn't in the fact sheet is listed as <i>unverified</i>.</li>
+      <li>An unreadable answer becomes <b>Review</b>, never Hold.</li>
+    </ul></li>
+  <li><b>Scorecard:</b> each brief is settled after its horizon (24 h by default) against what the coin and BTC actually did.
+    <ul>
+      <li><b>Alpha</b> is the coin's return minus BTC's.</li>
+      <li><b>Edge</b> is the average of rating direction × alpha. Positive means following the briefs beat holding BTC.</li>
+      <li>Only briefs made live count, so the AI can never be judged on a past it already knows.</li>
+    </ul></li>
+  <li><b>AI spend:</b> today's cost against the daily cap, plus the calls made. The cap and a daily call limit stop new calls once reached.</li>
+</ul>
+<div class="note"><b>Switching AI on.</b> Set these in <code>.env</code>, then restart:
+  <ul>
+    <li><code>INTEL_LLM_PROVIDER</code>: <code>anthropic</code>, <code>openai</code>, <code>openai_compatible</code> or <code>ollama</code> (a free local model);</li>
+    <li>the matching key (<code>ANTHROPIC_API_KEY</code> or <code>OPENAI_API_KEY</code>), or <code>INTEL_LLM_BASE_URL</code> for a local server;</li>
+    <li>optional: <code>INTEL_LLM_MODEL</code>, <code>INTEL_LLM_QUICK_MODEL</code> (a cheaper model for the analysts) and <code>INTEL_LLM_DAILY_BUDGET_USD</code> (default $2).</li>
+  </ul>
+  For Anthropic, also run <code>pip install anthropic</code>. Without a provider every AI button stays hidden.</div>
+
+<h3 id="t-strategies">Strategies</h3>
+<p>Lists your <b>strategy configurations</b>. A configuration is one built-in strategy, plus one coin, one timeframe, its parameters and its risk settings. <b>New strategy</b> creates one. On a strategy's page:</p>
+<div class="tablewrap"><table>
+<tr><th>Button</th><th>What it does</th></tr>
+<tr><td><b>Run backtest</b></td><td>Replays stored candles over a date range and shows results. See <a href="#testing">section 9</a>.</td></tr>
+<tr><td><b>Run checks</b></td><td><b>Look-ahead</b> and <b>warm-up</b> checks prove the strategy isn't using future data.</td></tr>
+<tr><td><b>New sweep</b></td><td>Tests many parameter combinations with an out-of-sample check.</td></tr>
+<tr><td><b>Portfolio backtest</b></td><td>Same strategy on several coins with one shared balance.</td></tr>
+<tr><td><b>Start paper trading</b></td><td>Runs on live bars with simulated fills at modelled prices.</td></tr>
+<tr><td><b>Start dry-run bot</b></td><td>Runs on live bars and fills against Gate.io's real order book (simulated, no orders sent).</td></tr>
+<tr><td><b>Start live bot</b></td><td>Real orders. Only available when everything in <a href="#bots">section 11</a> is satisfied.</td></tr>
+<tr><td><b>Edit / Delete</b></td><td>Change settings or remove the configuration and its results.</td></tr>
+</table></div>
+
+<h3 id="t-bots">Bots (the Control page)</h3>
+<p>One place for every running bot and the account-wide safety controls:</p>
+<ul>
+  <li><b>Bot list:</b> each bot's mode, status, position and P&amp;L, with a link to its page.</li>
+  <li><b>Halt entries / Resume:</b> pause all new entries. Exits still go through.</li>
+  <li><b>Kill switch:</b> sells every bot position and stops all bots at once.</li>
+  <li><b>Risk limits:</b>
+    <ul>
+      <li>max daily loss % (default 3%; reaching it halts entries automatically);</li>
+      <li>max open exposure (0 = no limit);</li>
+      <li>max orders per hour (default 30);</li>
+      <li>dry-run days needed before a strategy can go live (default 7).</li>
+    </ul>
+    Limits only <b>block entries</b>; exits are never blocked.</li>
+  <li><b>Live trading switch:</b> you type <code>LIVE</code> to enable. This is one of the three locks.</li>
+  <li><b>Test alerts:</b> sends a test message to Telegram / webhooks.</li>
+</ul>
+
+<h3 id="t-jobs">Jobs</h3>
+<p>Every background task, whether you started it or the schedule did:</p>
+<ul>
+  <li>its kind and coin;</li>
+  <li>its origin (User or Schedule);</li>
+  <li>its status: <span class="badge">queued</span> <span class="badge">running</span> <span class="badge ok">done</span> <span class="badge err">failed</span>;</li>
+  <li>its duration and a result message.</li>
+</ul>
+<p>Use it to see when data was last refreshed, and why something failed. Details are in <a href="#jobs">section 12</a>.</p>
+
+<h3 id="t-export">Export all &amp; Admin</h3>
+<ul>
+  <li><b>Export all:</b> one Excel file with every coin's daily levels: date, high + time, low + time, PDH, PDL and precision.</li>
+  <li><b>Admin:</b> Django's built-in admin, for user accounts and raw records. Normally you don't need it.</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="data">5. Where the data comes from (and how exact it is)</h2>
+<p>Gate.io's candle API only returns the latest 10,000 candles per timeframe, which is about 6.9 days of 1m candles. QF-gate combines four sources to get exact history:</p>
+<div class="tablewrap"><table>
+<tr><th>Period</th><th>Source</th><th>Accuracy</th></tr>
+<tr><td>Last ~6.9 days</td><td>1m candles from the REST API</td><td>Exact</td></tr>
+<tr><td>Older, completed months</td><td>Rebuilt from Gate.io's official monthly <b>trade archive</b> (every single trade). Cached in <code>var/archive/</code>.</td><td>Exact, including taker buy/sell volume</td></tr>
+<tr><td>Current month before the REST window</td><td>5m candles (that month's archive is only published after it ends)</td><td>High/low <b>price exact</b>; the time is to 5 minutes. It is upgraded to 1m automatically when the archive appears.</td></tr>
+<tr><td>Now</td><td>Live stream (<code>stream_candles</code>)</td><td>Exact, every ~2–4 s</td></tr>
+</table></div>
+<ul>
+  <li>Every daily high/low is <b>cross-checked</b> against Gate.io's own 1d candle, and mismatches are flagged.</li>
+  <li>The <b>Precision</b> column (1m / 5m) tells you how exact each day's high/low time is.</li>
+  <li><b>Day boundary:</b> UTC by default, matching Gate's daily candles. You can change it with <code>MARKET_DAY_TIMEZONE</code> and then run <code>compute_levels</code>.</li>
+  <li><b>History length:</b> <code>MARKET_HISTORY_DAYS</code> (yours is 365, a rolling year).</li>
+  <li><b>Funding rates:</b> Gate keeps 180 days of perpetual-futures funding history, and the sync stores it for futures backtests.</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="engine">6. How the engine trades (the rules behind every result)</h2>
+<p>One <b>engine</b> makes every decision, in backtests, sweeps, paper trading and bots alike. A strategy therefore behaves the same everywhere: a test proves that paper trading in small steps produces exactly the same trades as one backtest over the same bars.</p>
+<ol>
+  <li><b>Closed bars only.</b> A strategy only sees a bar after it has closed.</li>
+  <li><b>Fill at the next open.</b> A signal on bar N is filled at bar N+1's open (backtest and paper). Bots send the order the moment the engine decides.</li>
+  <li><b>Stops and targets</b> are checked against each bar's high and low.
+    <ul>
+      <li>When one bar touches both, its stored <b>1-minute path</b> is replayed to see which came first. The backtest page counts how many bars this decided.</li>
+      <li>If both are in the same minute, the stop counts first, which is the pessimistic choice.</li>
+      <li>A price gap past the stop fills at the open.</li>
+    </ul></li>
+  <li><b>Position size</b> is the smallest of three: the risk-based size, the max position %, and the available cash.</li>
+  <li><b>Fees and slippage</b> are charged on both entry and exit.</li>
+  <li><b>Protections and exit rules</b> (<a href="#risk">section 8</a>) are applied by the engine to every strategy.</li>
+</ol>
+<div class="tip"><b>Why this matters:</b> most backtesting mistakes come from peeking at the future, such as using a bar's close before it closed or deciding with the day's final high. QF-gate's rules plus its automatic <a href="#testing">look-ahead check</a> make that very hard to do by accident.</div>
+
+<!-- ================================================================== -->
+<h2 id="strategies">7. The strategies</h2>
+<p>Every strategy is <b>long</b> (buys, then sells). Each also has a <b>short twin</b> (<code>…_short</code>), described at the end of this section. A strategy only returns signals: <i>buy</i> with a stop and a target, or <i>sell</i>. The engine does the rest.</p>
+
+<h3>PDH breakout (long) <code>pdh_breakout</code></h3>
+<p><b>Idea:</b> when price closes above yesterday's high (PDH) after being below it, buyers have taken control. It aims to ride the breakout.</p>
+<ul>
+  <li><b>Entry:</b> a bar closes above PDH (by at least <i>buffer</i>%) after the previous close was below it.</li>
+  <li><b>Stop:</b> below PDH or below the breakout bar's low, minus a buffer.</li>
+  <li><b>Exit:</b> the target at an R multiple, or the end of the day.</li>
+</ul>
+<div class="tablewrap"><table>
+<tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>buffer_pct</code></td><td>0.05</td><td>Close must exceed PDH by this %, to skip marginal pokes</td></tr>
+<tr><td><code>stop_mode</code></td><td>pdh</td><td><code>pdh</code> = stop under PDH; <code>bar_low</code> = under the breakout bar's low</td></tr>
+<tr><td><code>stop_buffer_pct</code></td><td>0.3</td><td>Extra distance below the stop level, %</td></tr>
+<tr><td><code>target_mode</code></td><td>r</td><td><code>r</code> = take profit at an R multiple; <code>none</code> = no target</td></tr>
+<tr><td><code>target_r</code></td><td>2.0</td><td>Target as a multiple of the risk (entry − stop)</td></tr>
+<tr><td><code>one_trade_per_day</code></td><td>yes</td><td>At most one entry per day</td></tr>
+<tr><td><code>exit_at_day_end</code></td><td>yes</td><td>Close any open position at the end of the day</td></tr>
+</table></div>
+
+<h3>PDL sweep &amp; reclaim (long) <code>pdl_reclaim</code></h3>
+<p><b>Idea:</b> price dips below yesterday's low (PDL), triggering stop-losses (a "sweep" of liquidity), then quickly closes back above it. Sellers are exhausted, so it buys the reclaim.</p>
+<ul>
+  <li><b>Entry:</b> the low goes at least <i>sweep</i>% under PDL, then a bar closes back above PDL within N bars.</li>
+  <li><b>Stop:</b> under the sweep low.</li>
+  <li><b>Target:</b> an R multiple, the middle of the previous day, or PDH. Otherwise it exits at day end.</li>
+</ul>
+<div class="tablewrap"><table>
+<tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>sweep_pct</code></td><td>0.05</td><td>How far below PDL the low must go to count as a sweep, %</td></tr>
+<tr><td><code>max_bars_below</code></td><td>4</td><td>Reclaim must happen within this many bars of the sweep</td></tr>
+<tr><td><code>stop_buffer_pct</code></td><td>0.2</td><td>Stop distance below the sweep low, %</td></tr>
+<tr><td><code>target_mode</code></td><td>r</td><td><code>r</code> = R multiple, <code>mid</code> = middle of previous day, <code>pdh</code> = previous day's high</td></tr>
+<tr><td><code>target_r</code></td><td>2.0</td><td>R multiple (when target is <code>r</code>)</td></tr>
+<tr><td><code>one_trade_per_day</code> / <code>exit_at_day_end</code></td><td>yes / yes</td><td>As above</td></tr>
+</table></div>
+
+<h3>Zone hotspot bounce / breakout (long) <code>zone_hotspot</code></h3>
+<p><b>Idea:</b> trade the hotspot bands from the Zones page. Each day it rebuilds the hotspots from the previous <i>lookback_days</i> <b>completed</b> days only, so there is no look-ahead. It therefore needs that many days of history before it trades; backtests load this warm-up automatically.</p>
+<ul>
+  <li><b>Bounce mode:</b> price dips into a band from above, then closes back above it within <i>confirm_bars</i>. The band acted as support.</li>
+  <li><b>Breakout mode:</b> a bar closes above a band by <i>breakout_pct</i>.</li>
+  <li><b>Stop:</b> below the band (or the dip low) minus a buffer.</li>
+  <li><b>Target:</b> the next band above, or an R multiple.</li>
+</ul>
+<div class="tablewrap"><table>
+<tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>entry_mode</code></td><td>bounce</td><td><code>bounce</code> = support held; <code>breakout</code> = closed above the band</td></tr>
+<tr><td><code>lookback_days</code></td><td>30</td><td>Completed days used to find the bands (3–120)</td></tr>
+<tr><td><code>width_pct</code></td><td>1.0</td><td>Zone / band width, ± %</td></tr>
+<tr><td><code>top_bands</code></td><td>8</td><td>How many hotspot bands to use</td></tr>
+<tr><td><code>min_touches</code></td><td>3</td><td>A band must have been revisited on at least this many days</td></tr>
+<tr><td><code>min_held</code></td><td>1</td><td>…and have held at least this many times</td></tr>
+<tr><td><code>confirm_bars</code></td><td>4</td><td>Bounce: the close back above the band must come within this many bars</td></tr>
+<tr><td><code>break_pct</code></td><td>0.3</td><td>Bounce cancelled if a bar closes this % below the band</td></tr>
+<tr><td><code>breakout_pct</code></td><td>0.05</td><td>Breakout: close must be this % above the band</td></tr>
+<tr><td><code>stop_buffer_pct</code></td><td>0.3</td><td>Stop distance below the band (or dip low), %</td></tr>
+<tr><td><code>target_mode</code></td><td>next_band</td><td>Next band above (falls back to R) or an R multiple</td></tr>
+<tr><td><code>target_r</code></td><td>2.0</td><td>R multiple for the target</td></tr>
+<tr><td><code>min_target_r</code></td><td>1.0</td><td>Skip trades whose target is closer than this many R</td></tr>
+<tr><td><code>one_trade_per_day</code></td><td>yes</td><td>At most one entry per day</td></tr>
+<tr><td><code>exit_at_day_end</code></td><td>no</td><td>Close any open position at day end</td></tr>
+</table></div>
+
+<h3>Adaptive ML: logistic regression (long) <code>ml_logit</code></h3>
+<p><b>Idea:</b> a small machine-learning model predicts the chance that price rises at least <i>threshold</i>% within <i>horizon</i> bars, and buys when that chance is high. It retrains regularly on a rolling window.</p>
+<ul>
+  <li><b>Features</b> come from the closed bar and earlier ones only:
+    <ul>
+      <li>recent returns and volatility;</li>
+      <li>bar size;</li>
+      <li>position in the day's range;</li>
+      <li>distance to PDH/PDL;</li>
+      <li>order-flow delta;</li>
+      <li>time of day.</li>
+    </ul></li>
+  <li><b>No look-ahead:</b> a bar becomes a training example only <i>horizon</i> bars later, once its outcome has actually happened. This is verified by the look-ahead check.</li>
+</ul>
+<div class="tablewrap"><table>
+<tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>horizon</code></td><td>4</td><td>Bars ahead the model predicts</td></tr>
+<tr><td><code>threshold_pct</code></td><td>0.3</td><td>A "rise" = a high at least this % above the close</td></tr>
+<tr><td><code>prob_entry</code></td><td>0.6</td><td>Buy when the predicted chance is at least this</td></tr>
+<tr><td><code>prob_exit</code></td><td>0.4</td><td>Sell when it falls below this (0 = off)</td></tr>
+<tr><td><code>train_size</code></td><td>600</td><td>Most recent finished examples to train on</td></tr>
+<tr><td><code>min_train</code></td><td>200</td><td>No trading before this many examples</td></tr>
+<tr><td><code>retrain_bars</code></td><td>24</td><td>Retrain every N bars</td></tr>
+<tr><td><code>l2</code></td><td>1.0</td><td>Regularisation (higher = simpler model, less overfitting)</td></tr>
+<tr><td><code>stop_pct</code></td><td>1.0</td><td>Stop distance below the entry bar's close, %</td></tr>
+<tr><td><code>target_r</code></td><td>2.0</td><td>Target as R multiple (0 = none)</td></tr>
+<tr><td><code>train_days</code></td><td>14</td><td>Warm-up days replayed to collect examples first</td></tr>
+</table></div>
+<div class="warn"><b>Research tool only.</b> On real BTC data its defaults lose money.</div>
+
+<h3>Follow remote signals <code>follow_remote</code></h3>
+<p>Executes buy/sell signals received from <b>another QF-gate instance</b> for this coin, instead of deciding itself. See <a href="#alerts">signal sharing</a>.</p>
+
+<h3>Short (mirrored) strategies <code>…_short</code></h3>
+<p>Every long strategy has a mirrored short twin. It runs the long logic on <b>inverted prices</b> (1 ÷ price), so:</p>
+<ul>
+  <li>PDH breakout becomes <b>PDL breakdown</b>;</li>
+  <li>PDL reclaim becomes <b>PDH sweep &amp; reject</b>;</li>
+  <li>zone bounce becomes <b>zone rejection</b>.</li>
+</ul>
+<p>Shorts need <b>Market = futures</b> (spot can't short). They run in backtests, sweeps and paper trading. Bots are spot-only.</p>
+
+<!-- ================================================================== -->
+<h2 id="risk">8. Risk &amp; execution settings (every strategy has these)</h2>
+<p>These sit next to the strategy's own parameters. Everything marked "0 = off" is off by default, and <b>every setting can be swept</b>.</p>
+
+<h3>Money and costs</h3>
+<div class="tablewrap"><table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>starting_cash</code></td><td>10,000</td><td>Starting balance in the quote currency</td></tr>
+<tr><td><code>risk_pct</code></td><td>1.0</td><td>Max loss per trade if the stop is hit, % of equity (risk sizing)</td></tr>
+<tr><td><code>max_position_pct</code></td><td>100</td><td>Max position size, % of equity</td></tr>
+<tr><td><code>fee_rate</code></td><td>0.002</td><td>Taker fee per fill as a fraction (0.2% = Gate spot default)</td></tr>
+<tr><td><code>slippage_bps</code></td><td>2</td><td>Assumed slippage per fill in basis points (1 bp = 0.01%)</td></tr>
+</table></div>
+
+<h3>Market: spot or futures</h3>
+<div class="tablewrap"><table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>market</code></td><td>spot</td><td><b>spot</b> = long only, you pay the full amount. <b>futures</b> = long and short with margin, funding every 8 h, and a liquidation price (perpetual priced from spot candles).</td></tr>
+<tr><td><code>leverage</code></td><td>1</td><td>Futures: margin = position value ÷ leverage</td></tr>
+<tr><td><code>maint_margin_rate</code></td><td>0.003</td><td>Futures: maintenance margin rate (sets the liquidation price)</td></tr>
+<tr><td><code>funding_default</code></td><td>0.0001</td><td>Futures: funding per 8 h where Gate's 180-day history has no value</td></tr>
+</table></div>
+<div class="note"><b>Liquidation</b> is checked before the stop, and it costs the <b>whole margin</b>. <b>Funding</b> is paid or received every 8 hours from Gate's real rates: when the rate is positive, longs pay shorts.</div>
+
+<h3>Position sizing</h3>
+<div class="tablewrap"><table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>size_mode</code></td><td>risk</td><td><b>risk</b> = size so that hitting the stop loses <code>risk_pct</code>; <b>fixed</b> = a fixed amount; <b>equity_pct</b> = a % of equity</td></tr>
+<tr><td><code>size_value</code></td><td>0</td><td>The amount (fixed) or % (equity_pct)</td></tr>
+<tr><td><code>add_max</code></td><td>0 (off)</td><td><b>Scale in:</b> add to the position at most this many times…</td></tr>
+<tr><td><code>add_step_pct</code></td><td>2</td><td>…each time price falls this % below the last fill…</td></tr>
+<tr><td><code>add_size_pct</code></td><td>100</td><td>…buying this % of the first fill's size (limit fill, maker fee)</td></tr>
+</table></div>
+
+<h3>Order types</h3>
+<div class="tablewrap"><table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>entry_order</code></td><td>market</td><td><b>market</b> = fill at the next open (taker fee). <b>limit</b> = a resting order that fills only if price trades through it (maker fee).</td></tr>
+<tr><td><code>limit_offset_pct</code></td><td>0</td><td>Limit price this % below the signal bar's close</td></tr>
+<tr><td><code>limit_expiry_bars</code></td><td>3</td><td>Cancel the limit if not filled within this many bars</td></tr>
+<tr><td><code>maker_fee_rate</code></td><td>0.002</td><td>Your Gate maker fee</td></tr>
+<tr><td><code>exit_targets_maker</code></td><td>no</td><td>Book target / ROI / partial exits as limit orders (maker fee)</td></tr>
+</table></div>
+
+<h3>Exit management</h3>
+<div class="tablewrap"><table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>trail_pct</code></td><td>0</td><td><b>Trailing stop</b> this % below the highest price since entry</td></tr>
+<tr><td><code>trail_activate_r</code></td><td>0</td><td>…only once price reached +N R (0 = from entry)</td></tr>
+<tr><td><code>breakeven_r</code></td><td>0</td><td><b>Break-even:</b> move the stop to entry + fees once price reaches +N R</td></tr>
+<tr><td><code>partial_tp_r</code> / <code>partial_tp_pct</code></td><td>0 / 50</td><td><b>Partial take-profit:</b> at +N R sell this % of the position</td></tr>
+<tr><td><code>roi_pct</code> / <code>roi_decay_bars</code></td><td>0 / 0</td><td><b>ROI target:</b> take profit at this % gain, optionally falling linearly to 0% (break-even) over N bars</td></tr>
+<tr><td><code>max_hold_bars</code></td><td>0</td><td><b>Time exit:</b> close after holding this many bars</td></tr>
+</table></div>
+
+<h3>AI filter (paper trading and dry-run bots only)</h3>
+<div class="tablewrap"><table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>ai_min_rating</code></td><td>off</td><td>Only enter when the latest AI brief for the coin is at least <i>buy</i>, <i>overweight</i> or <i>hold</i> (shorts need the mirror image)</td></tr>
+<tr><td><code>ai_max_age_hours</code></td><td>24</td><td>...and that brief finished before the bar closed and is no older than this</td></tr>
+</table></div>
+<p>The filter has strict limits:</p>
+<ul>
+  <li>It is never used in backtests or sweeps, because an AI can't be replayed on the past without hindsight. Live bots ignore it too.</li>
+  <li>It stays <b>inactive until the scorecard earns it</b>: 20 settled directional briefs with a positive edge and a hit rate above 50%.</li>
+  <li>The paper and bot pages show whether it is active. Blocked entries are counted under "AI filter" reasons.</li>
+</ul>
+
+<h3>Order-flow filter</h3>
+<div class="tablewrap"><table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>min_entry_delta_pct</code></td><td>0</td><td>Only buy when taker-buy minus taker-sell volume on the signal bar is at least this % of its volume (buyers must dominate). Bars without order-flow data are skipped.</td></tr>
+</table></div>
+
+<h3>Protections (pause new entries after bad runs)</h3>
+<div class="tablewrap"><table>
+<tr><th>Protection</th><th>Settings</th><th>What it does</th></tr>
+<tr><td><b>Cooldown</b></td><td><code>cooldown_bars</code></td><td>Wait N bars after any exit before a new entry</td></tr>
+<tr><td><b>Stoploss guard</b></td><td><code>sl_guard_trades</code>, <code>sl_guard_window_bars</code> (96), <code>sl_guard_pause_bars</code> (96)</td><td>After X stop-outs within a window of N bars, pause for M bars</td></tr>
+<tr><td><b>Max drawdown</b></td><td><code>max_dd_pct</code>, <code>max_dd_pause_bars</code> (96)</td><td>Pause when closed-trade drawdown from the peak reaches X%; the peak resets after the pause</td></tr>
+<tr><td><b>Low profit</b></td><td><code>low_profit_trades</code>, <code>low_profit_min_pct</code>, <code>low_profit_pause_bars</code> (96)</td><td>If the last N trades' summed return is below X%, pause</td></tr>
+</table></div>
+<p>Blocked entries are counted by reason on the results page.</p>
+
+<!-- ================================================================== -->
+<h2 id="testing">9. Testing: backtest, checks, sweep, paper, portfolio</h2>
+
+<h3>Backtest</h3>
+<p>Replays stored candles for a date range through the engine. The results page shows:</p>
+<ul>
+  <li>the metrics (<a href="#metrics">section 10</a>);</li>
+  <li>an equity curve;</li>
+  <li>a price chart with entries, exits, the strategy's own levels (PDH/PDL, zone bands) and signals that were <b>blocked</b> or ignored;</li>
+  <li>every trade with its reason;</li>
+  <li><b>breakdowns</b> by month, week, day, exit reason and entry type.</li>
+</ul>
+<p><b>Exports:</b> Excel, and <b>Export signals (CSV)</b>, which lists every signal and what became of it.</p>
+
+<h3>Strategy checks</h3>
+<ul>
+  <li><b>Look-ahead check:</b> the strategy may not touch the database while deciding, and the history is replayed with the future cut off at many points. The signals must be identical, otherwise the strategy is "seeing the future".</li>
+  <li><b>Warm-up check:</b> signals must not change when more history is given than the strategy says it needs.</li>
+</ul>
+<p>Both must pass before a strategy can be promoted to live.</p>
+
+<h3>Parameter sweep</h3>
+<p>Runs many combinations of settings on the same bars (up to 1,000 for a grid). How to enter values:</p>
+<ul>
+  <li>a list: <code>1, 2, 3</code></li>
+  <li>a range <code>start:stop:step</code>, e.g. <code>0.2:1:0.2</code></li>
+  <li><code>all</code> for every choice</li>
+  <li><code>both</code> for yes/no</li>
+</ul>
+<div class="tablewrap"><table>
+<tr><th>Option</th><th>Meaning</th></tr>
+<tr><td><b>Method</b></td><td><b>Grid</b> runs every combination. <b>Smart search</b> samples, then refines around the best, for spaces far bigger than 1,000; <i>budget</i> sets how many combinations it runs.</td></tr>
+<tr><td><b>Out-of-sample %</b></td><td>The last part of the period (default 30%) is held back. Combinations are ranked on the first part only, then re-tested on the held-back part. If the winners fail there, they were luck (<b>curve-fitting</b>).</td></tr>
+<tr><td><b>Walk-forward folds</b></td><td>Splits time into windows: pick the best on the past, test on the next window, repeat. This is the most realistic test.</td></tr>
+<tr><td><b>Rank by</b></td><td>Return %, Profit factor, Sharpe, Average R, Return / max drawdown, Sortino, Calmar, or a Combined score.</td></tr>
+<tr><td><b>Min trades</b></td><td>Ignore combinations with fewer trades (default 5). Too few trades means the result is noise.</td></tr>
+</table></div>
+<p><b>Results:</b></p>
+<ul>
+  <li>how the top 10 did out-of-sample;</li>
+  <li>a heatmap of the first two settings you varied;</li>
+  <li>a ranking table;</li>
+  <li><b>Save as strategy</b>, which copies a row into a new strategy and leaves the original unchanged.</li>
+</ul>
+<p>The timeframe can't vary within one sweep. Make one strategy per timeframe instead.</p>
+
+<h3>Paper trading</h3>
+<p>Runs the strategy on <b>live</b> closed bars with simulated fills at modelled prices (next open + slippage). The live stream steps it within seconds of each minute closing, and the worker steps it every minute as a backup. It keeps its state, so a restart resumes exactly. Only one paper session per strategy can run at a time.</p>
+
+<h3>Trade journal (on backtest, paper and bot pages)</h3>
+<p>A review of every closed trade <b>with hindsight</b>. It never feeds a decision. Pick how far to look after each exit: 4, 12, 24, 48 or 96 bars. For each trade it measures:</p>
+<ul>
+  <li><b>MFE / MAE:</b> the furthest price went for and against the trade while it was open, in R.</li>
+  <li><b>After the exit:</b> how much further price went the trade's way (missed profit) or against it (loss avoided), and whether it came back past the entry.</li>
+</ul>
+<p>Each exit gets a <b>verdict</b>:</p>
+<ul>
+  <li><i>exited early</i>: a winner that kept going at least 1R;</li>
+  <li><i>good exit</i>: a winner that didn't;</li>
+  <li><i>shaken out</i>: stopped at a loss, then price came back past the entry;</li>
+  <li><i>stop saved</i>: price kept going at least 1R further against the trade;</li>
+  <li><i>fair stop</i>, <i>closed before recovery</i>, <i>cut loss well</i>, <i>fair exit</i>;</li>
+  <li><i>waiting</i>: not enough bars after the exit yet;</li>
+  <li><i>test ended</i>: closed by the end of the backtest.</li>
+</ul>
+<p>The <b>lessons</b> turn the counts into advice with the numbers behind it, for example "5 of 12 stop-outs came back past the entry: the stop may be too tight". A lesson needs at least 5 trades of a kind. Tables group everything by exit reason and entry type, and "Every trade" lists each trade's verdict.</p>
+
+<h3>Portfolio backtest</h3>
+<p>One strategy on <b>several coins</b>, sharing one balance, with a <b>max number of open trades</b> (default 3). It shows whether an idea works across coins or only on one, and gives per-coin results.</p>
+
+<!-- ================================================================== -->
+<h2 id="metrics">10. Reading the results</h2>
+<div class="tablewrap"><table>
+<tr><th>Metric</th><th>What it means</th><th>Rough guide</th></tr>
+<tr><td><b>Return %</b></td><td>Final equity vs starting cash</td><td>Compare with buy-and-hold</td></tr>
+<tr><td><b>Buy &amp; hold %</b></td><td>What just holding the coin did over the same period</td><td>A strategy should beat it, or match it with less risk</td></tr>
+<tr><td><b>Max drawdown</b></td><td>The largest fall from a peak in equity</td><td>Expect live to be worse than backtest</td></tr>
+<tr><td><b>Win rate</b></td><td>% of trades that made money</td><td>Meaningless alone. 30% can be great with big winners</td></tr>
+<tr><td><b>Profit factor</b></td><td>Gross profit ÷ gross loss</td><td>&gt;1 makes money; ~1.3+ is interesting</td></tr>
+<tr><td><b>R / Average R</b></td><td>Result per trade as a multiple of the risk taken (1R = the distance from entry to stop)</td><td>Positive average R = edge per trade</td></tr>
+<tr><td><b>Sharpe</b></td><td>Return relative to all volatility</td><td>&gt;1 is good</td></tr>
+<tr><td><b>Sortino</b></td><td>Like Sharpe, but only counts downside volatility</td><td>Higher is better</td></tr>
+<tr><td><b>Calmar</b></td><td>Annual return ÷ max drawdown</td><td>Higher is better</td></tr>
+<tr><td><b>Fees</b></td><td>Total paid</td><td>If fees ≈ profit, the edge is too thin</td></tr>
+<tr><td><b>Time in market</b></td><td>% of time a position was open</td><td>Lower = less exposure</td></tr>
+<tr><td><b>Intra-bar decided</b></td><td>Bars where the 1m path decided stop vs target</td><td>Shows how much 1m detail mattered</td></tr>
+<tr><td><b>Blocked entries</b></td><td>Signals stopped by protections, limits or filters, by reason</td><td>Check protections aren't hiding a broken strategy</td></tr>
+</table></div>
+<div class="tip"><b>Trust a result only when:</b> it passes the checks, has enough trades (dozens, not 5), survives out-of-sample and walk-forward, still works with realistic fees, and holds on other coins (portfolio).</div>
+
+<!-- ================================================================== -->
+<h2 id="bots">11. Bots: how they work</h2>
+<p>A bot is a strategy configuration that trades continuously through a <b>broker</b>. There are two modes:</p>
+<div class="grid2">
+  <div class="card"><b>Dry-run (simulated)</b>
+    <ul>
+      <li>Nothing is sent to Gate.io and no API key is needed.</li>
+      <li>Each order is "filled" against Gate.io's <b>live order book</b> by walking the price levels, so slippage is real.</li>
+      <li>The taker fee is charged.</li>
+    </ul>
+    Use it for at least the required number of days before going live.</div>
+  <div class="card"><b>Live (real money)</b>
+    <ul>
+      <li>Real orders on Gate.io spot, signed with your API key.</li>
+      <li>Locked unless every requirement below is met.</li>
+    </ul></div>
+</div>
+<h3>The life of a bot</h3>
+<ol>
+  <li><b>Start:</b> on a strategy page, press <i>Start dry-run bot</i>. Only one running bot per strategy and mode is allowed.</li>
+  <li><b>Every closed bar:</b> the stream (or the worker as backup) gives the bar to the <b>same engine</b> used in backtests, which decides buy, sell or nothing.</li>
+  <li><b>Order sent at once:</b> unlike backtests, the bot doesn't wait for the next bar's open. It sends the order as soon as the engine decides.</li>
+  <li><b>Risk check first:</b> an entry is blocked (and logged as <i>blocked</i>) in any of these cases:
+    <ul>
+      <li>trading is halted;</li>
+      <li>the daily loss limit is hit;</li>
+      <li>open exposure would exceed the max;</li>
+      <li>there have been too many orders this hour.</li>
+    </ul>
+    Exits are <b>never blocked</b>.</li>
+  <li><b>Between bars:</b> every live price tick is checked against the bot's stop and target, which follow trailing and break-even moves, so exits aren't a bar late.</li>
+  <li><b>Every order is recorded:</b> side, reason, decision price, actual fill, slippage (basis points), fee and realised P&amp;L.</li>
+  <li><b>Alerts</b> go out for every fill, block, error and halt (see <a href="#alerts">section 13</a>).</li>
+</ol>
+<h3>Bot page</h3>
+<ul>
+  <li>The current position and cash.</li>
+  <li>Actual fills vs decision price, i.e. slippage.</li>
+  <li>Fees, and realised P&amp;L from the fills shown next to the engine's model P&amp;L. A big gap means execution is costing you.</li>
+  <li><b>Force exit:</b> sell the position now.</li>
+  <li><b>Stop:</b> stop the bot.</li>
+</ul>
+<h3>The three locks on live trading (plus a checklist)</h3>
+<ol>
+  <li><code>LIVE_TRADING=true</code> in <code>.env</code>.</li>
+  <li><code>GATE_API_KEY</code> and <code>GATE_API_SECRET</code> in <code>.env</code>. Use a <b>trade-only</b>, IP-whitelisted key with <b>withdrawals disabled</b>.</li>
+  <li>The live switch on the Control page, turned on by typing <code>LIVE</code>.</li>
+  <li><b>Promotion checklist</b> for that strategy: at least <i>N</i> days of dry-run (default 7), and the strategy checks passed.</li>
+</ol>
+<div class="warn"><b>Limits of bots:</b> spot only (long only). Futures and short strategies run in backtests, sweeps and paper only. Your setup has live trading <b>locked</b>.</div>
+
+<!-- ================================================================== -->
+<h2 id="jobs">12. Jobs: what they do</h2>
+<p>A <b>job</b> is a unit of background work stored in the database and run by the <b>worker</b>. This keeps the website fast: pressing a button queues a job and returns immediately. It also records when data was refreshed and why something failed. The queue lives in the database, with no Redis or Celery needed.</p>
+<div class="tablewrap"><table>
+<tr><th>Job kind</th><th>What it does</th><th>Started by</th></tr>
+<tr><td><b>Sync candles</b></td><td>Downloads missing 1m candles: REST, then trade archive, then 5m fallback. It upgrades 5m days to 1m once the month's archive is published, refreshes funding rates, then recomputes daily levels. Incremental runs only redo days that changed.</td><td>Adding a coin; <i>Sync</i> / <i>Repair gaps</i>; the schedule every 15 min</td></tr>
+<tr><td><b>Verify identity</b></td><td>Re-checks chain + contract on Gate.io and fills in Gate's currency code. It catches delistings and contract changes.</td><td><i>Verify</i> button; the schedule daily at 00:05 UTC</td></tr>
+<tr><td><b>Recompute levels</b></td><td>Rebuilds each day's high/low (with times), PDH/PDL and precision from stored candles.</td><td>After syncs; after changing the day timezone</td></tr>
+<tr><td><b>Backtest</b></td><td>Runs one backtest.</td><td><i>Run backtest</i></td></tr>
+<tr><td><b>Parameter sweep</b></td><td>Runs all combinations, with progress shown. It runs inside the web server if the worker is down.</td><td><i>New sweep</i></td></tr>
+<tr><td><b>Portfolio backtest</b></td><td>Runs a multi-coin backtest.</td><td><i>Portfolio backtest</i></td></tr>
+</table></div>
+<p><b>Statuses:</b></p>
+<ul>
+  <li><b>queued</b>: waiting for the worker;</li>
+  <li><b>running</b>;</li>
+  <li><b>done</b>, with a result message;</li>
+  <li><b>failed</b>, with the error message.</li>
+</ul>
+<p><b>Origin:</b> <i>User</i> means you pressed a button; <i>Schedule</i> means the worker queued it itself. Job records older than 14 days are deleted automatically.</p>
+<div class="tablewrap"><table>
+<tr><th>Schedule</th><th>When</th><th>Setting</th></tr>
+<tr><td>Incremental sync of every active, verified coin</td><td>every 15 min</td><td><code>MARKET_SYNC_EVERY_MINUTES</code> (0 = off)</td></tr>
+<tr><td>Identity re-check</td><td>daily 00:05 UTC</td><td><code>MARKET_DAILY_AT_UTC</code></td></tr>
+<tr><td>Delete old job records</td><td>daily</td><td><code>MARKET_KEEP_JOBS_DAYS</code> (14)</td></tr>
+</table></div>
+
+<!-- ================================================================== -->
+<h2 id="alerts">13. Alerts, Telegram and signal sharing</h2>
+<ul>
+  <li><b>Alerts:</b> set up one or both of these in <code>.env</code>:
+    <ul>
+      <li><code>TELEGRAM_BOT_TOKEN</code> + <code>TELEGRAM_CHAT_ID</code>;</li>
+      <li><code>WEBHOOK_URLS</code>.</li>
+    </ul>
+    Every fill, block, error, halt and stream outage is sent.</li>
+  <li><b>Telegram commands</b> (run <code>python manage.py telegram_bot</code>; only your chat is obeyed):
+    <ul>
+      <li><code>/status</code>, <code>/profit</code>, <code>/daily</code>, <code>/balance</code>;</li>
+      <li><code>/stop</code>, <code>/start</code>;</li>
+      <li><code>/kill confirm</code>;</li>
+      <li><code>/forceexit &lt;id&gt;</code>.</li>
+    </ul></li>
+  <li><b>Signal sharing:</b>
+    <ul>
+      <li>With <code>SIGNAL_API_TOKEN</code> set, this instance publishes its live signals at <code>/trading/api/v1/signals</code>, and can accept pushes at <code>…/ingest</code>.</li>
+      <li>On another instance, run <code>python manage.py follow_signals --url https://this-host/ --name mybot</code> (with <code>REMOTE_SIGNAL_TOKEN</code>).</li>
+      <li>Then start a bot with the <b>Follow remote signals</b> strategy.</li>
+    </ul></li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="commands">14. Commands &amp; settings</h2>
+<p>A <code>coin</code> argument can be its id, symbol, Gate pair or contract address.</p>
+<div class="tablewrap"><table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>runserver</code></td><td>The website</td></tr>
+<tr><td><code>run_worker [--once] [--no-schedule]</code></td><td>Job queue and schedule (<code>--once</code> drains the queue and exits)</td></tr>
+<tr><td><code>stream_candles</code></td><td>Live 1m candles and trades over WebSocket</td></tr>
+<tr><td><code>sync_candles [coin…] [--days 60] [--no-archive]</code></td><td>Fetch history now</td></tr>
+<tr><td><code>verify_coins [coin…]</code></td><td>Identity check</td></tr>
+<tr><td><code>compute_levels [--tz Asia/Karachi]</code></td><td>Recompute daily high/low</td></tr>
+<tr><td><code>export_levels [coin…] --out file.xlsx</code></td><td>Excel of daily levels</td></tr>
+<tr><td><code>backfill_orderflow</code></td><td>Fill taker buy/sell volume for older months from the archive</td></tr>
+<tr><td><code>telegram_bot</code></td><td>Telegram command listener</td></tr>
+<tr><td><code>follow_signals --url … --name …</code></td><td>Receive another instance's signals</td></tr>
+</table></div>
+<p>All commands run as <code>python manage.py &lt;command&gt;</code>.</p>
+<p>Settings live in <code>.env</code> (see <code>.env.example</code>):</p>
+<ul>
+  <li>history and schedule: <code>MARKET_HISTORY_DAYS</code>, <code>MARKET_DAY_TIMEZONE</code>, <code>MARKET_SYNC_EVERY_MINUTES</code>;</li>
+  <li>web access: <code>DJANGO_ALLOWED_HOSTS</code>, <code>DJANGO_CSRF_TRUSTED_ORIGINS</code> (needed for sharing via ngrok);</li>
+  <li><code>DJANGO_DEBUG</code>;</li>
+  <li>live trading: <code>LIVE_TRADING</code>, <code>GATE_API_KEY</code>, <code>GATE_API_SECRET</code>;</li>
+  <li>alerts: <code>TELEGRAM_*</code>, <code>WEBHOOK_URLS</code>;</li>
+  <li>signal sharing: <code>SIGNAL_API_TOKEN</code>.</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="glossary">15. Glossary (A–Z)</h2>
+<p class="muted">Use the search box in the sidebar to filter this list.</p>
+<p id="noresult" class="muted hidden">No glossary entries match.</p>
+<dl class="gloss" id="gloss">
+<div><dt>Archive (trade archive)</dt><dd>Gate.io's official monthly files of every trade. QF-gate rebuilds exact 1m candles (and buy/sell volume) from them. <span class="cat">Data</span></dd></div>
+<div><dt>AI brief</dt><dd>A multi-agent AI review of one coin from the app's own data, ending in Buy / Overweight / Hold / Underweight / Sell. Advisory only. <span class="cat">Intel</span></dd></div>
+<div><dt>AI filter</dt><dd>Optional paper / dry-run entry filter that needs a recent AI brief to agree; inactive until the scorecard earns it. <span class="cat">Intel</span></dd></div>
+<div><dt>Alpha (brief)</dt><dd>The coin's return over a brief's horizon minus BTC's return. <span class="cat">Intel</span></dd></div>
+<div><dt>Ask / Bid</dt><dd>Ask = lowest price a seller accepts; bid = highest price a buyer pays. <span class="cat">Market</span></dd></div>
+<div><dt>Backtest</dt><dd>Replaying a strategy on stored history to see how it would have done. <span class="cat">Testing</span></dd></div>
+<div><dt>Bar / Candle</dt><dd>Price summary for one period: open, high, low, close (OHLC) and volume. "Closed bar" = its period has ended. <span class="cat">Data</span></dd></div>
+<div><dt>Basis point (bp, bps)</dt><dd>0.01%. 10 bps = 0.1%. Used for slippage. <span class="cat">Costs</span></dd></div>
+<div><dt>Break-even stop</dt><dd>Moving the stop to the entry price (plus fees) once the trade is in profit, so it can no longer lose. <span class="cat">Exits</span></dd></div>
+<div><dt>Breakout</dt><dd>Price closing beyond a level (e.g. above PDH or a zone band). <span class="cat">Strategy</span></dd></div>
+<div><dt>Broker</dt><dd>The part of a bot that executes orders: dry-run (simulated on the live order book) or Gate (real). <span class="cat">Bots</span></dd></div>
+<div><dt>Buy &amp; hold</dt><dd>Just buying at the start and holding to the end: the benchmark to beat. <span class="cat">Metrics</span></dd></div>
+<div><dt>Calmar ratio</dt><dd>Annual return ÷ max drawdown. <span class="cat">Metrics</span></dd></div>
+<div><dt>Chain / Contract address</dt><dd>The blockchain a token lives on, and its unique address there. Together they identify a coin; tickers can clash. <span class="cat">Coins</span></dd></div>
+<div><dt>CoinGecko</dt><dd>Public coin database used for icons and the list of exchanges that list a coin. <span class="cat">Coins</span></dd></div>
+<div><dt>Cooldown</dt><dd>Protection: wait N bars after an exit before entering again. <span class="cat">Protections</span></dd></div>
+<div><dt>Curve-fitting (overfitting)</dt><dd>Settings tuned so tightly to past data that they fail on new data. Detected by out-of-sample and walk-forward tests. <span class="cat">Testing</span></dd></div>
+<div><dt>CVD (cumulative volume delta)</dt><dd>Running total of delta; rising = buyers have been more aggressive. <span class="cat">Order flow</span></dd></div>
+<div><dt>Delta</dt><dd>Taker-buy volume minus taker-sell volume for a bar or day. <span class="cat">Order flow</span></dd></div>
+<div><dt>Delisted</dt><dd>No longer traded on the exchange. The daily identity check catches it. <span class="cat">Coins</span></dd></div>
+<div><dt>Drawdown / Max drawdown</dt><dd>Fall from a peak in equity; the largest such fall. <span class="cat">Metrics</span></dd></div>
+<div><dt>Dry-run</dt><dd>A bot mode with real live decisions and simulated fills on the real order book. No orders are sent. <span class="cat">Bots</span></dd></div>
+<div><dt>Edge (briefs)</dt><dd>Average of rating direction x alpha over settled briefs; positive means the briefs helped. <span class="cat">Intel</span></dd></div>
+<div><dt>Engine</dt><dd>The single piece of code that turns strategy signals into trades, used by backtests, sweeps, paper and bots. <span class="cat">Core</span></dd></div>
+<div><dt>Equity</dt><dd>Cash plus the current value of open positions. <span class="cat">Metrics</span></dd></div>
+<div><dt>Exposure</dt><dd>Total value of open positions. The Control page can cap it. <span class="cat">Risk</span></dd></div>
+<div><dt>Fee (maker / taker)</dt><dd>Taker = an order that fills immediately (market); maker = a resting limit order (often cheaper). Gate spot default is 0.2%. <span class="cat">Costs</span></dd></div>
+<div><dt>Force exit</dt><dd>Button on a bot page: sell the bot's position now. <span class="cat">Bots</span></dd></div>
+<div><dt>Fact sheet</dt><dd>The data an AI brief's agents are given; every number in a brief should come from it. <span class="cat">Intel</span></dd></div>
+<div><dt>Forward-only</dt><dd>Only data <i>after</i> something formed may be used to judge it. No hindsight. <span class="cat">Zones</span></dd></div>
+<div><dt>Funding rate</dt><dd>Futures payment every 8 h between longs and shorts. When positive, longs pay. <span class="cat">Futures</span></dd></div>
+<div><dt>Futures (perpetual)</dt><dd>Contracts that track a coin's price with leverage, allowing shorts. QF-gate backtests them using spot prices. <span class="cat">Futures</span></dd></div>
+<div><dt>Gap (data)</dt><dd>Minutes missing from stored history. Shown under Data quality and fixed with Repair gaps. <span class="cat">Data</span></dd></div>
+<div><dt>Heartbeat</dt><dd>Regular "I'm alive" signal from the worker and stream that drives the header's green dots. <span class="cat">Services</span></dd></div>
+<div><dt>Heatmap</dt><dd>Grid coloured by how many touches happened per day and price band (Zones), or by result per pair of settings (Sweep). <span class="cat">Zones / Testing</span></dd></div>
+<div><dt>Held / Broke / Inside / Live</dt><dd>Result of a zone touch: closed back where it came from / closed through / closed inside / today, not finished. <span class="cat">Zones</span></dd></div>
+<div><dt>Hotspot</dt><dd>A price band revisited on the most distinct days. These are the strongest recurring levels. <span class="cat">Zones</span></dd></div>
+<div><dt>In-sample / Out-of-sample (OOS)</dt><dd>The data used to choose settings / the held-back later data used only to test them. <span class="cat">Testing</span></dd></div>
+<div><dt>Interval / Timeframe</dt><dd>Bar length: 1m, 5m, 15m, 1h, 4h, 1d. <span class="cat">Data</span></dd></div>
+<div><dt>Intra-bar detail</dt><dd>Using a bar's stored 1m candles to see whether its stop or target was hit first. <span class="cat">Engine</span></dd></div>
+<div><dt>Job</dt><dd>A background task (sync, verify, levels, backtest, sweep, portfolio) run by the worker. <span class="cat">Services</span></dd></div>
+<div><dt>Kill switch</dt><dd>Control page button: sell every bot position and stop all bots. <span class="cat">Bots</span></dd></div>
+<div><dt>Leverage</dt><dd>Position value ÷ margin. 5× means a 1% move changes your margin by 5%. <span class="cat">Futures</span></dd></div>
+<div><dt>Limit order</dt><dd>An order at a set price that fills only if price trades through it. <span class="cat">Orders</span></dd></div>
+<div><dt>Liquidation</dt><dd>Futures position closed by the exchange when losses eat the margin. In QF-gate it costs the whole margin. <span class="cat">Futures</span></dd></div>
+<div><dt>Look-ahead (bias)</dt><dd>A strategy accidentally using future data. The look-ahead check detects it. <span class="cat">Testing</span></dd></div>
+<div><dt>Maintenance margin</dt><dd>Minimum margin before liquidation; sets the liquidation price. <span class="cat">Futures</span></dd></div>
+<div><dt>Market order</dt><dd>Buy or sell immediately at the best available prices (taker). <span class="cat">Orders</span></dd></div>
+<div><dt>MFE / MAE</dt><dd>Maximum favourable / adverse excursion: the furthest price went for / against a trade while it was open, in R. Shown in the trade journal. <span class="cat">Journal</span></dd></div>
+<div><dt>Order book</dt><dd>All resting buy (bid) and sell (ask) orders at each price. <span class="cat">Market</span></dd></div>
+<div><dt>Order flow</dt><dd>Who was aggressive: taker buyers vs taker sellers. See Delta and CVD. <span class="cat">Order flow</span></dd></div>
+<div><dt>Paper trading</dt><dd>Running a strategy on live bars with simulated fills at modelled prices. <span class="cat">Testing</span></dd></div>
+<div><dt>Partial take-profit</dt><dd>Selling part of a position at a profit level and letting the rest run. <span class="cat">Exits</span></dd></div>
+<div><dt>PDH / PDL</dt><dd>Previous day's high / previous day's low (UTC day by default). Key reference levels. <span class="cat">Levels</span></dd></div>
+<div><dt>Portfolio backtest</dt><dd>One strategy on several coins sharing one balance and a max number of open trades. <span class="cat">Testing</span></dd></div>
+<div><dt>Position in range</dt><dd>Where the current price sits between the period's low (0%) and high (100%). <span class="cat">Scanner</span></dd></div>
+<div><dt>Precision</dt><dd>Whether a day's high/low time is exact to 1 minute or to 5 minutes. <span class="cat">Data</span></dd></div>
+<div><dt>Price gap (Screener)</dt><dd>How far apart the exchanges' prices are for one ticker. Above 5% usually means different coins share the name. <span class="cat">Screener</span></dd></div>
+<div><dt>Profit factor</dt><dd>Gross profit ÷ gross loss. Above 1 = profitable. <span class="cat">Metrics</span></dd></div>
+<div><dt>Promotion checklist</dt><dd>Conditions before a strategy may trade live: dry-run days and passed checks. <span class="cat">Bots</span></dd></div>
+<div><dt>Protections</dt><dd>Rules that pause new entries after bad runs: cooldown, stoploss guard, max drawdown, low profit. <span class="cat">Risk</span></dd></div>
+<div><dt>Quote currency</dt><dd>What a pair is priced in: the USDT in SOL/USDT. <span class="cat">Market</span></dd></div>
+<div><dt>R (R multiple)</dt><dd>The risk unit: entry − stop = 1R. A +2R trade made twice what it risked. <span class="cat">Metrics</span></dd></div>
+<div><dt>Range %</dt><dd>(High − low) ÷ low over a period: a volatility measure. <span class="cat">Market</span></dd></div>
+<div><dt>Reclaim</dt><dd>Price closing back above a level it had just fallen below. <span class="cat">Strategy</span></dd></div>
+<div><dt>ROI target / decay</dt><dd>Take profit at a % gain; with decay, the target falls over time toward break-even. <span class="cat">Exits</span></dd></div>
+<div><dt>Scorecard (briefs)</dt><dd>How settled AI briefs did per rating and per coin: return, alpha vs BTC, hit rate, edge. <span class="cat">Intel</span></dd></div>
+<div><dt>Scale in</dt><dd>Adding to a position at lower prices in fixed steps. <span class="cat">Sizing</span></dd></div>
+<div><dt>Scanner</dt><dd>On-demand deep analysis of one coin on any exchange, with nothing stored. <span class="cat">Tabs</span></dd></div>
+<div><dt>Screener</dt><dd>Filtered list of every pair on one exchange or all combined. <span class="cat">Tabs</span></dd></div>
+<div><dt>Sharpe ratio</dt><dd>Return per unit of volatility. <span class="cat">Metrics</span></dd></div>
+<div><dt>Short</dt><dd>Profiting from a fall: sell first, buy back lower. Futures only here. <span class="cat">Futures</span></dd></div>
+<div><dt>Signal</dt><dd>A strategy's output: buy (with stop and target) or sell. <span class="cat">Strategy</span></dd></div>
+<div><dt>Slippage</dt><dd>The difference between the price you expected and the price you got. <span class="cat">Costs</span></dd></div>
+<div><dt>Smart search</dt><dd>Sweep method that samples, then refines around the best results. <span class="cat">Testing</span></dd></div>
+<div><dt>Sortino ratio</dt><dd>Like Sharpe, but only penalises downside volatility. <span class="cat">Metrics</span></dd></div>
+<div><dt>Spot</dt><dd>Buying the actual coin with full payment. Long only, no leverage. <span class="cat">Market</span></dd></div>
+<div><dt>Spread</dt><dd>Ask − bid, usually as a % of the ask. A cost on every round trip. <span class="cat">Market</span></dd></div>
+<div><dt>Stop (stop-loss)</dt><dd>Price at which a losing trade is closed. <span class="cat">Exits</span></dd></div>
+<div><dt>Stoploss guard</dt><dd>Protection: pause after too many stop-outs in a short time. <span class="cat">Protections</span></dd></div>
+<div><dt>Strategy configuration</dt><dd>A strategy plus a coin, timeframe, parameters and risk settings, saved under a name. <span class="cat">Strategy</span></dd></div>
+<div><dt>Sweep</dt><dd>A backtest of many parameter combinations, ranked, with an out-of-sample check. <span class="cat">Testing</span></dd></div>
+<div><dt>Sweep (liquidity)</dt><dd>Price briefly pushing past a level (e.g. PDL) to trigger stops, then reversing. <span class="cat">Strategy</span></dd></div>
+<div><dt>Sync</dt><dd>Downloading new or missing candles and recomputing levels. <span class="cat">Data</span></dd></div>
+<div><dt>Taker buy / sell volume</dt><dd>Volume from aggressive buyers / sellers (orders that crossed the spread). <span class="cat">Order flow</span></dd></div>
+<div><dt>Target (take-profit)</dt><dd>Price at which a winning trade is closed. <span class="cat">Exits</span></dd></div>
+<div><dt>Ticker</dt><dd>A coin's short name (e.g. SOL). Not unique: different coins can share one. <span class="cat">Coins</span></dd></div>
+<div><dt>Time exit</dt><dd>Closing a trade after holding it N bars. <span class="cat">Exits</span></dd></div>
+<div><dt>Trade journal</dt><dd>Hindsight review of closed trades: excursions, what price did after each exit, a verdict per exit and lessons. <span class="cat">Journal</span></dd></div>
+<div><dt>Touch</dt><dd>A later bar or day whose range overlaps a zone. <span class="cat">Zones</span></dd></div>
+<div><dt>Trailing stop</dt><dd>A stop that follows price up at a set distance below the highest price. <span class="cat">Exits</span></dd></div>
+<div><dt>Verify (identity)</dt><dd>Checking the chain + contract against Gate.io's currency list. <span class="cat">Coins</span></dd></div>
+<div><dt>Walk-forward</dt><dd>Repeatedly choosing settings on a past window and testing on the next one. <span class="cat">Testing</span></dd></div>
+<div><dt>Warm-up</dt><dd>History a strategy needs before it can decide (e.g. 30 days for zones). The warm-up check verifies it is respected. <span class="cat">Testing</span></dd></div>
+<div><dt>WebSocket</dt><dd>A live connection where the exchange pushes data as it happens. Used by the stream. <span class="cat">Services</span></dd></div>
+<div><dt>Worker</dt><dd>Background service that runs jobs and the schedule. <span class="cat">Services</span></dd></div>
+<div><dt>Zone</dt><dd>A ±width% band around a past day's (or bar's) high or low. <span class="cat">Zones</span></dd></div>
+</dl>
+
+<!-- ================================================================== -->
+<h2 id="faq">16. Troubleshooting</h2>
+<div class="tablewrap"><table>
+<tr><th>Symptom</th><th>Cause and fix</th></tr>
+<tr><td>Header dot for <b>worker</b> is red; jobs stay <i>queued</i></td><td>The worker isn't running. Start <code>python manage.py run_worker</code>.</td></tr>
+<tr><td>Header dot for <b>live</b> is red; chart stops updating</td><td>Start <code>python manage.py stream_candles</code>.</td></tr>
+<tr><td>Job <i>failed</i></td><td>Open Jobs and read the message. Network errors usually clear on the next scheduled run.</td></tr>
+<tr><td>Chart has holes / day precision says 5m</td><td>Coin page → Data quality → <b>Repair gaps</b>. 5m days upgrade to 1m once Gate publishes that month's archive.</td></tr>
+<tr><td>Add coin rejected</td><td>The contract doesn't belong to that Gate currency, or it's listed on another chain. Use <b>Fetch details</b> and the chain picker.</td></tr>
+<tr><td>Screener / Scanner says an exchange is unreachable</td><td>That exchange's API is blocked or down from your network (OKX currently is). The others still work.</td></tr>
+<tr><td>Zone strategy makes no trades at first</td><td>It needs <code>lookback_days</code> of completed history first.</td></tr>
+<tr><td>Bot entry shows <i>blocked</i></td><td>A risk limit or halt stopped it. See the reason on the bot page and the Control page.</td></tr>
+<tr><td>"Bad Request (400)" when opening via ngrok</td><td>The tunnel host isn't in <code>DJANGO_ALLOWED_HOSTS</code> / <code>DJANGO_CSRF_TRUSTED_ORIGINS</code> (free ngrok URLs change on restart).</td></tr>
+<tr><td>Great backtest, bad paper results</td><td>Classic curve-fitting. Check out-of-sample, walk-forward, trade count and fees.</td></tr>
+</table></div>
+<p class="muted" style="margin-top:40px;font-size:13px">QF-gate user manual · written for the current version (multi-exchange Screener and Scanner, Phases 1–6). Developer details are in README.md; the project plan is in ROADMAP.md.</p>
+</main>
+</div>
+<script>
+(function () {
+  const q = document.getElementById('q'), items = document.querySelectorAll('#gloss > div'), none = document.getElementById('noresult');
+  q.addEventListener('input', () => {
+    const t = q.value.trim().toLowerCase();
+    let shown = 0;
+    items.forEach(d => { const hit = !t || d.textContent.toLowerCase().includes(t); d.classList.toggle('hidden', !hit); if (hit) shown++; });
+    none.classList.toggle('hidden', shown > 0);
+    if (t) document.getElementById('glossary').scrollIntoView();
+  });
+  const btn = document.getElementById('theme'), root = document.documentElement, order = ['auto', 'light', 'dark'];
+  let mode = 'auto';
+  try { mode = localStorage.getItem('qf-manual-theme') || 'auto'; } catch (e) {}
+  const apply = () => {
+    if (mode === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', mode);
+    btn.textContent = mode[0].toUpperCase() + mode.slice(1);
+  };
+  apply();
+  btn.addEventListener('click', () => {
+    mode = order[(order.indexOf(mode) + 1) % 3]; apply();
+    try { localStorage.setItem('qf-manual-theme', mode); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>

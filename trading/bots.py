@@ -256,6 +256,9 @@ def step_bot(bot_id: int, now: datetime | None = None, broker=None) -> int:
         return 0
     st = dict(bot.state or {})
     engine = Engine(strategy, bot.risk, settings.MARKET["DAY_TIMEZONE"], state=st.get("engine") or None)
+    from intel.gate import make_gate  # 7.7 AI filter: dry-run only, no-op unless switched on and earned
+
+    engine.entry_gate = make_gate(bot.config.coin, bot.risk, bot.mode)
     start_ts = int(bot.started_at.timestamp())
     closed = []
     for bar in bars:
