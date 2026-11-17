@@ -108,11 +108,12 @@ dl.gloss dd .cat { color: var(--muted); font-size: 12px; }
     <li><a href="#testing">9. Backtest, sweep, paper, portfolio</a></li>
     <li><a href="#metrics">10. Reading the results</a></li>
     <li><a href="#bots">11. Bots: how they work</a></li>
-    <li><a href="#jobs">12. Jobs: what they do</a></li>
-    <li><a href="#alerts">13. Alerts &amp; signal sharing</a></li>
-    <li><a href="#commands">14. Commands &amp; settings</a></li>
-    <li><a href="#glossary">15. Glossary (A–Z)</a></li>
-    <li><a href="#faq">16. Troubleshooting</a></li>
+    <li><a href="#ai">12. AI briefs: how they work</a></li>
+    <li><a href="#jobs">13. Jobs: what they do</a></li>
+    <li><a href="#alerts">14. Alerts &amp; signal sharing</a></li>
+    <li><a href="#commands">15. Commands &amp; settings</a></li>
+    <li><a href="#glossary">16. Glossary (A–Z)</a></li>
+    <li><a href="#faq">17. Troubleshooting</a></li>
   </ol>
   <div class="theme">Theme: <button type="button" id="theme">Auto</button></div>
 </nav>
@@ -120,7 +121,7 @@ dl.gloss dd .cat { color: var(--muted); font-size: 12px; }
 <main>
 <h1>QF-gate user manual</h1>
 <p class="lead">A personal crypto research and trading platform built on Gate.io. It stores exact 1-minute price history,
-finds the levels price reacts to, tests trading ideas on that history, and runs them on live prices: first simulated, and live only if you deliberately unlock it.</p>
+finds the levels price reacts to, tests trading ideas on that history, and runs them on live prices: first simulated, and live only if you deliberately unlock it. It also gathers context (news, macro, prediction markets) and can ask an AI analyst team to review a coin from your own data, then keeps score of whether those reviews were right.</p>
 
 <div class="warn"><b>Read this first.</b> Nothing in QF-gate is financial advice. The research tools are honest by design (no look-ahead, real fees),
 and so far they show that the built-in strategies have <b>no proven edge</b>: for example, the zone strategy was profitable in 0 of 3 walk-forward folds and the ML strategy lost 84% on its defaults.
@@ -128,12 +129,13 @@ Treat every result as something to test, not a promise.</div>
 
 <!-- ================================================================== -->
 <h2 id="start">1. What QF-gate is</h2>
-<p>QF-gate does five jobs, in this order:</p>
+<p>QF-gate does six jobs:</p>
 <div class="grid2">
   <div class="card"><b>1. Find coins</b><br>Screener (all pairs, any exchange) and Scanner (one coin in depth, any exchange) find candidates without storing anything.</div>
   <div class="card"><b>2. Store exact history</b><br>Coins you add are identified by chain + contract, and their 1-minute candles are stored (up to a rolling year), with each day's high/low and the minute it happened.</div>
   <div class="card"><b>3. Understand levels</b><br>Previous-day high/low (PDH/PDL), zones, hotspots and a heatmap show where price keeps reacting.</div>
   <div class="card"><b>4. Test ideas</b><br>Strategies are replayed on stored history (backtests), tuned (sweeps), checked for cheating (look-ahead / warm-up checks) and tested over several coins (portfolio).</div>
+  <div class="card"><b>6. Add context and review (Intel)</b><br>News and sentiment, macro and prediction markets, AI briefs that debate a coin from your data, a scorecard of how those briefs did, and a trade journal that reviews every closed trade with hindsight.</div>
   <div class="card"><b>5. Run them live</b><br>Paper trading and dry-run bots act on live prices with simulated fills. Live trading uses real orders and is locked behind three switches and a checklist.</div>
 </div>
 <p><b>Gate.io is the exchange of record.</b> Coin identity, stored history, the live feed and all trading are on Gate.io. The other exchanges (Binance, OKX, Bybit, KuCoin, MEXC, Bitget) are used <b>read-only</b> for research in the Screener, the Scanner and Compare.</p>
@@ -144,7 +146,7 @@ Treat every result as something to test, not a promise.</div>
 <div class="tablewrap"><table>
 <tr><th>Service</th><th>Command</th><th>What it does</th><th>If it is stopped</th></tr>
 <tr><td><b>Web server</b></td><td><code>python manage.py runserver</code></td><td>The website you use at <code>http://localhost:8000</code>.</td><td>No pages.</td></tr>
-<tr><td><b>Worker</b></td><td><code>python manage.py run_worker</code></td><td>Runs <a href="#jobs">jobs</a> (sync, verify, backtests, sweeps, portfolios) and the schedule: incremental sync every 15 min, identity re-check daily, cleanup. Also steps paper sessions and bots every minute as a backup.</td><td>Buttons like <i>Sync</i> only queue a job; nothing runs. Pages warn you. Sweeps fall back to running inside the web server.</td></tr>
+<tr><td><b>Worker</b></td><td><code>python manage.py run_worker</code></td><td>Runs <a href="#jobs">jobs</a> (sync, verify, backtests, sweeps, portfolios) and the schedule: incremental sync every 15 min, identity re-check daily, cleanup. Also steps paper sessions and bots every minute as a backup, fetches news every 30 minutes, starts queued AI briefs, and scores briefs once their horizon has passed.</td><td>Buttons like <i>Sync</i> only queue a job; nothing runs. Pages warn you. Sweeps and AI briefs fall back to running inside the web server. News only updates when you press Refresh, and briefs are not scored.</td></tr>
 <tr><td><b>Live stream</b></td><td><code>python manage.py stream_candles</code></td><td>Receives Gate.io's live 1-minute candles and trades over WebSocket (every ~2–4 s), fills gaps after a reconnect, updates daily levels, steps paper sessions and bots as each minute closes, and checks bot stops/targets on every price tick.</td><td>Charts stop moving; bots and paper trading fall back to the worker's once-a-minute step; a "stream outage" alert is sent.</td></tr>
 </table></div>
 <div class="note"><b>Login.</b> Every page except the login page needs an account. Create one with <code>python manage.py createsuperuser</code>. Anyone with an account can do everything, including starting bots, so only give accounts to people you trust.</div>
@@ -156,9 +158,11 @@ Treat every result as something to test, not a promise.</div>
   <span class="step"><b>Scanner</b>deep look</span><span class="arrow">→</span>
   <span class="step"><b>Add coin</b>verify + store</span><span class="arrow">→</span>
   <span class="step"><b>Market / Zones</b>study levels</span><span class="arrow">→</span>
+  <span class="step"><b>AI brief</b>optional second opinion</span><span class="arrow">→</span>
   <span class="step"><b>Strategy</b>configure</span><span class="arrow">→</span>
   <span class="step"><b>Backtest · Checks · Sweep</b>test honestly</span><span class="arrow">→</span>
   <span class="step"><b>Paper / Dry-run bot</b>live, simulated</span><span class="arrow">→</span>
+  <span class="step"><b>Review</b>journal &amp; scorecard</span><span class="arrow">→</span>
   <span class="step"><b>Live bot</b>only after the checklist</span>
 </div>
 <ol>
@@ -166,8 +170,10 @@ Treat every result as something to test, not a promise.</div>
   <li><b>Judge:</b> in the <a href="#t-scanner">Scanner</a>, look at 30–90 days of zones, hotspots and where the coin trades. If it looks tradable, press <i>Add for monitoring</i>.</li>
   <li><b>Add:</b> the <i>Add coin</i> form fetches chain, contract, icon and exchanges automatically; check the chain and Save. History download starts as a job.</li>
   <li><b>Study:</b> on the <a href="#t-market">Market</a> page and its <a href="#t-zones">Zones</a> page, see the day history, PDH/PDL and hotspots.</li>
+  <li><b>Ask (optional):</b> press <i>AI brief</i> on the coin for a second opinion with reasoning, levels and risks. Check the <a href="#t-intel">Intel</a> news and macro panel too. A brief is advisory: it never trades.</li>
   <li><b>Test:</b> create a <a href="#t-strategies">strategy</a>, run a backtest, run <i>checks</i>, then a sweep with out-of-sample and walk-forward.</li>
   <li><b>Watch live:</b> start paper trading or a dry-run bot and leave it for days.</li>
+  <li><b>Review:</b> read the <i>Trade journal</i> on your backtest, paper and bot pages (were stops too tight, exits too early?), and the brief scorecard on the Intel page (are the AI ratings any good?).</li>
   <li><b>Go live (optional):</b> only when the promotion checklist is green and you have unlocked live trading.</li>
 </ol>
 
@@ -348,6 +354,44 @@ Treat every result as something to test, not a promise.</div>
   </ul>
   For Anthropic, also run <code>pip install anthropic</code>. Without a provider every AI button stays hidden.</div>
 
+<h4>The Intel page, top to bottom</h4>
+<div class="tablewrap"><table>
+<tr><th>Part</th><th>What it shows / does</th></tr>
+<tr><td><b>Status tiles</b></td><td>
+  <ul style="margin:0;padding-left:18px">
+    <li>AI provider and model ("off" until switched on);</li>
+    <li>today's AI spend against the daily cap;</li>
+    <li>AI calls today against the daily limit;</li>
+    <li>how many briefs are settled or waiting;</li>
+    <li>whether the AI filter is earned, and why not.</li>
+  </ul></td></tr>
+<tr><td><b>New AI brief</b></td><td>Coin, quote and the exchange to read prices from. Shown only when AI is on. Starting from a stored coin's own page adds PDH/PDL, order flow and funding to the brief.</td></tr>
+<tr><td><b>AI briefs</b></td><td>Every brief: time, coin, rating (or status), price at the brief, return and return vs BTC once settled ("due …" before that), and cost. <i>open</i> shows the full brief.</td></tr>
+<tr><td><b>Scorecard</b></td><td>For each rating: settled count, average return, average alpha vs BTC, and how often it was right. Below it, the overall <b>edge</b> and hit rate.</td></tr>
+<tr><td><b>Macro &amp; prediction markets</b></td><td>Rates, dollar index, crypto market and dominance, and Polymarket odds, each with its date. <i>Refresh</i> fetches now. Failing sources are listed.</td></tr>
+<tr><td><b>News &amp; sentiment</b></td><td>The latest headlines with a sentiment badge and source; filter by coin. <i>Refresh news now</i> fetches immediately. The line above the list shows which sources worked.</td></tr>
+<tr><td><b>Recent AI calls</b></td><td>Every call: model, purpose (which brief and which agent), tokens in and out, cost and time, plus <i>cache</i> or <i>error</i> badges.</td></tr>
+</table></div>
+<h4>The Intel card on other pages</h4>
+<p>The Market page, the coin page and the Scanner (after a scan) show a small Intel card for that coin. It has:</p>
+<ul>
+  <li>news from the last 72 hours, with its mood count;</li>
+  <li>the coin's latest briefs, as badges you can click;</li>
+  <li>the <b>AI brief</b> button, shown only when AI is on.</li>
+</ul>
+<h4>Reading a brief</h4>
+<ul>
+  <li><b>Status while it runs:</b> <i>Queued</i>, then <i>Running</i> (Collecting data, Analysts, Bull and bear debate, Research manager, Risk review, Portfolio manager), then <i>Done</i> or <i>Failed</i> with the reason. The page refreshes itself every 5 seconds while it runs.</li>
+  <li><b>Rating:</b> Buy / Overweight / Hold / Underweight / Sell, plus the model's confidence. <b>Review</b> means the answer couldn't be read; treat it as "no opinion".</li>
+  <li><b>Summary and key risks:</b> the portfolio manager's reasoning.</li>
+  <li><b>Price, entry, stop, target:</b> the price when the brief was made, and the suggested levels if any. Spot only: Sell / Underweight mean avoid or reduce, not short.</li>
+  <li><b>Outcome:</b> after the horizon (24 h by default), the actual return and the return vs BTC.</li>
+  <li><b>AI calls / cost:</b> what this brief cost.</li>
+  <li><b>Grounding checks:</b> dropped levels and <i>unverified numbers</i>, prices the model wrote that aren't in its fact sheet. Treat those with suspicion.</li>
+  <li><b>How the team got there:</b> each analyst's report, the debate, the research manager, the three risk views and the raw final answer, all expandable.</li>
+  <li><b>Fact sheet:</b> exactly what the agents were given.</li>
+</ul>
+
 <h3 id="t-strategies">Strategies</h3>
 <p>Lists your <b>strategy configurations</b>. A configuration is one built-in strategy, plus one coin, one timeframe, its parameters and its risk settings. <b>New strategy</b> creates one. On a strategy's page:</p>
 <div class="tablewrap"><table>
@@ -388,7 +432,7 @@ Treat every result as something to test, not a promise.</div>
   <li>its status: <span class="badge">queued</span> <span class="badge">running</span> <span class="badge ok">done</span> <span class="badge err">failed</span>;</li>
   <li>its duration and a result message.</li>
 </ul>
-<p>Use it to see when data was last refreshed, and why something failed. Details are in <a href="#jobs">section 12</a>.</p>
+<p>Use it to see when data was last refreshed, and why something failed. Details are in <a href="#jobs">section 13</a>.</p>
 
 <h3 id="t-export">Export all &amp; Admin</h3>
 <ul>
@@ -746,7 +790,7 @@ Treat every result as something to test, not a promise.</div>
     Exits are <b>never blocked</b>.</li>
   <li><b>Between bars:</b> every live price tick is checked against the bot's stop and target, which follow trailing and break-even moves, so exits aren't a bar late.</li>
   <li><b>Every order is recorded:</b> side, reason, decision price, actual fill, slippage (basis points), fee and realised P&amp;L.</li>
-  <li><b>Alerts</b> go out for every fill, block, error and halt (see <a href="#alerts">section 13</a>).</li>
+  <li><b>Alerts</b> go out for every fill, block, error and halt (see <a href="#alerts">section 14</a>).</li>
 </ol>
 <h3>Bot page</h3>
 <ul>
@@ -766,7 +810,71 @@ Treat every result as something to test, not a promise.</div>
 <div class="warn"><b>Limits of bots:</b> spot only (long only). Futures and short strategies run in backtests, sweeps and paper only. Your setup has live trading <b>locked</b>.</div>
 
 <!-- ================================================================== -->
-<h2 id="jobs">12. Jobs: what they do</h2>
+<h2 id="ai">12. AI briefs: how they work</h2>
+<p>An AI brief is a second opinion on one coin, written by a small team of AI "agents" that each play a role, like a
+research desk. The idea comes from the open-source TradingAgents project, rebuilt around QF-gate's own data.</p>
+<div class="flow">
+  <span class="step"><b>Fact sheet</b>your data</span><span class="arrow">→</span>
+  <span class="step"><b>4 analysts</b>technical · structure · news · macro</span><span class="arrow">→</span>
+  <span class="step"><b>Bull vs bear</b>debate</span><span class="arrow">→</span>
+  <span class="step"><b>Research manager</b>rules, proposes plan</span><span class="arrow">→</span>
+  <span class="step"><b>3 risk views</b>aggressive · neutral · conservative</span><span class="arrow">→</span>
+  <span class="step"><b>Portfolio manager</b>final rating</span><span class="arrow">→</span>
+  <span class="step"><b>Checks</b>grounding</span>
+</div>
+
+<h3>What goes into the fact sheet</h3>
+<div class="tablewrap"><table>
+<tr><th>Data</th><th>Source</th></tr>
+<tr><td>Price, 7-day and 30-day change, range, position in the range, volume</td><td>The Scanner engine on the chosen exchange</td></tr>
+<tr><td>Zones and the top hotspot bands, with how often they held or broke and their distance from the price</td><td>The same forward-only zone engine as the Zones page</td></tr>
+<tr><td>Where the coin trades: price, 24h change, volume and share on each exchange</td><td>Up to seven exchanges</td></tr>
+<tr><td>PDH / PDL, the last days' highs and lows with their times, order flow (24h delta), funding</td><td>Your stored history (only when the brief is started from a stored coin)</td></tr>
+<tr><td>Headlines mentioning the coin, seen in the last 72 hours, with their sentiment</td><td>The news feed, point in time</td></tr>
+<tr><td>Rates, dollar index, crypto market and dominance, Polymarket odds</td><td>The macro panel</td></tr>
+<tr><td>What earlier briefs on this coin said and how they turned out, plus the overall record per rating</td><td>The scorecard (memory), only outcomes already known</td></tr>
+</table></div>
+
+<h3>The rules it follows</h3>
+<ul>
+  <li><b>Advisory only.</b> A brief never places an order. The only way it can touch trading is the optional AI filter, and only after the scorecard has earned it.</li>
+  <li><b>Never in backtests or sweeps.</b> A language model was trained on data from after any historical date, so it can quietly "know" the future. Briefs are judged only on decisions made live.</li>
+  <li><b>Point in time.</b> News and memory only include what was known when the brief started.</li>
+  <li><b>Grounded numbers.</b> Agents are told to use only numbers from the fact sheet. Afterwards, levels on the wrong side of the price, or far outside the 30-day range, are dropped. Prices in the summary that aren't in the fact sheet are flagged.</li>
+  <li><b>Never a silent Hold.</b> An answer that can't be read becomes <i>Review</i>, and isn't scored.</li>
+  <li><b>Capped cost.</b> Every call is logged. A daily dollar cap and a daily call limit stop new calls. An identical prompt within 6 hours is answered from the log for free.</li>
+</ul>
+
+<h3>Cost and time</h3>
+<p>About 11 AI calls and a few minutes per brief. Briefs run one at a time, in the background.</p>
+<div class="tablewrap"><table>
+<tr><th>Model (examples)</th><th>Price per 1M tokens (in / out)</th><th>Rough cost per brief</th></tr>
+<tr><td><code>claude-opus-5-5</code> (default)</td><td>$4 / $20</td><td>about $0.20</td></tr>
+<tr><td><code>claude-sonnet-5-5</code></td><td>$2 / $10</td><td>about $0.10</td></tr>
+<tr><td><code>claude-haiku-5-5</code></td><td>$0.10 / $0.50</td><td>under $0.01</td></tr>
+<tr><td>Local model via Ollama</td><td>free</td><td>$0 (runs on your PC; quality depends on the model)</td></tr>
+</table></div>
+<p>To spend less, set <code>INTEL_LLM_QUICK_MODEL</code> to a cheaper model. The analysts, debaters and risk views use it, while the research manager and portfolio manager keep the main model.</p>
+
+<h3>The scorecard: are the briefs any good?</h3>
+<ul>
+  <li><b>Settlement:</b> once a brief's horizon has passed (24 h by default), it is settled at the first hourly candle after the due time, for both the coin and BTC.</li>
+  <li><b>Return</b> is the coin's move. <b>Alpha</b> is the coin's move minus BTC's; for BTC itself, its plain return.</li>
+  <li><b>Direction of a rating:</b> Buy +1, Overweight +½, Hold 0, Underweight −½, Sell −1. A directional brief is <b>right</b> when its alpha has the rating's sign.</li>
+  <li><b>Edge</b> is the average of direction × alpha. Above 0, following the ratings beat simply holding BTC. Below 0, they were worse than ignoring them.</li>
+</ul>
+<div class="tip"><b>When to trust it:</b> only after dozens of settled briefs across different coins and market conditions.
+  A handful of good calls is luck. The AI filter needs at least 20 directional briefs with a positive edge and a hit rate above 50% before it acts.</div>
+
+<h3>The AI filter, step by step</h3>
+<ol>
+  <li>Set <code>ai_min_rating</code> (buy / overweight / hold) on a strategy and start <b>paper trading</b> or a <b>dry-run bot</b>.</li>
+  <li>Until the scorecard earns it, the filter is <b>inactive</b>: nothing is blocked, and the paper or bot page says why.</li>
+  <li>Once earned, each new entry needs the coin's latest brief to have <b>finished before the bar closed</b>, to be no older than <code>ai_max_age_hours</code>, and to be at least the set rating (shorts need the mirror image).</li>
+  <li>Blocked entries are counted as <i>AI filter: no recent brief</i>, <i>brief needs review</i> or <i>brief rated …</i>. Exits are never blocked.</li>
+</ol>
+
+<h2 id="jobs">13. Jobs: what they do</h2>
 <p>A <b>job</b> is a unit of background work stored in the database and run by the <b>worker</b>. This keeps the website fast: pressing a button queues a job and returns immediately. It also records when data was refreshed and why something failed. The queue lives in the database, with no Redis or Celery needed.</p>
 <div class="tablewrap"><table>
 <tr><th>Job kind</th><th>What it does</th><th>Started by</th></tr>
@@ -793,7 +901,19 @@ Treat every result as something to test, not a promise.</div>
 </table></div>
 
 <!-- ================================================================== -->
-<h2 id="alerts">13. Alerts, Telegram and signal sharing</h2>
+<h3>Background tasks that aren't jobs</h3>
+<p>The worker also runs light tasks on a timer. They don't appear on the Jobs page.</p>
+<div class="tablewrap"><table>
+<tr><th>Task</th><th>How often</th><th>What it does</th></tr>
+<tr><td>Paper step / bot step</td><td>every minute</td><td>Back-up for the live stream: feeds closed bars to paper sessions and bots</td></tr>
+<tr><td>Service check</td><td>every minute</td><td>Sends a "stream outage" alert when bots depend on a stream that is down</td></tr>
+<tr><td>Funding sync</td><td>every 6 hours</td><td>Stores Gate.io perpetual funding rates (for futures backtests and briefs)</td></tr>
+<tr><td>News fetch</td><td>every 30 minutes (<code>INTEL_NEWS_EVERY_MINUTES</code>)</td><td>Fetches the news sources and deletes items older than 30 days</td></tr>
+<tr><td>Brief runner</td><td>every 5 seconds</td><td>Starts the oldest queued AI brief when none is running; marks briefs stuck for 20 minutes as failed</td></tr>
+<tr><td>Brief settlement</td><td>every 15 minutes</td><td>Scores briefs whose horizon has passed (the scorecard)</td></tr>
+</table></div>
+
+<h2 id="alerts">14. Alerts, Telegram and signal sharing</h2>
 <ul>
   <li><b>Alerts:</b> set up one or both of these in <code>.env</code>:
     <ul>
@@ -817,7 +937,7 @@ Treat every result as something to test, not a promise.</div>
 </ul>
 
 <!-- ================================================================== -->
-<h2 id="commands">14. Commands &amp; settings</h2>
+<h2 id="commands">15. Commands &amp; settings</h2>
 <p>A <code>coin</code> argument can be its id, symbol, Gate pair or contract address.</p>
 <div class="tablewrap"><table>
 <tr><th>Command</th><th>What it does</th></tr>
@@ -842,9 +962,30 @@ Treat every result as something to test, not a promise.</div>
   <li>alerts: <code>TELEGRAM_*</code>, <code>WEBHOOK_URLS</code>;</li>
   <li>signal sharing: <code>SIGNAL_API_TOKEN</code>.</li>
 </ul>
+<h3>Intel and AI settings (Phase 7)</h3>
+<div class="tablewrap"><table>
+<tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>INTEL_LLM_PROVIDER</code></td><td>(empty = off)</td><td><code>anthropic</code>, <code>openai</code>, <code>openai_compatible</code> or <code>ollama</code>. Nothing is sent to any AI service unless this is set.</td></tr>
+<tr><td><code>ANTHROPIC_API_KEY</code> / <code>OPENAI_API_KEY</code></td><td></td><td>The provider's key (or <code>INTEL_LLM_API_KEY</code> for any provider)</td></tr>
+<tr><td><code>INTEL_LLM_MODEL</code></td><td><code>claude-opus-5-5</code> for Anthropic</td><td>Main model: research manager and portfolio manager</td></tr>
+<tr><td><code>INTEL_LLM_QUICK_MODEL</code></td><td>same as the main model</td><td>Model for the analysts, debaters and risk views; set a cheaper one to save money</td></tr>
+<tr><td><code>INTEL_LLM_BASE_URL</code></td><td>Ollama: <code>http://localhost:11434/v1</code></td><td>Endpoint for an OpenAI-compatible or local server</td></tr>
+<tr><td><code>INTEL_LLM_DAILY_BUDGET_USD</code></td><td>2</td><td>No new AI calls once today's spend reaches this</td></tr>
+<tr><td><code>INTEL_LLM_MAX_CALLS_PER_DAY</code></td><td>200</td><td>No new AI calls once this many were made today</td></tr>
+<tr><td><code>INTEL_LLM_PRICE_IN</code> / <code>_OUT</code></td><td>(built-in table)</td><td>USD per 1M tokens, for models the app doesn't know (needed for the cap to count cost)</td></tr>
+<tr><td><code>INTEL_LLM_CACHE_HOURS</code></td><td>6</td><td>Identical prompts within this time are answered from the log for free</td></tr>
+<tr><td><code>INTEL_NEWS_EVERY_MINUTES</code></td><td>30</td><td>How often the worker fetches news (0 = only the Refresh button)</td></tr>
+<tr><td><code>INTEL_NEWS_FEEDS</code></td><td>CoinDesk, Cointelegraph, Decrypt</td><td>Comma-separated RSS / Atom feed URLs</td></tr>
+<tr><td><code>INTEL_NEWS_REDDIT</code></td><td>true</td><td>Also try Reddit r/CryptoCurrency (currently refused without login)</td></tr>
+<tr><td><code>INTEL_NEWS_KEEP_DAYS</code></td><td>30</td><td>Older news items are deleted</td></tr>
+<tr><td><code>INTEL_BRIEF_HORIZON_HOURS</code></td><td>24</td><td>How far ahead a brief looks, and when it is scored</td></tr>
+<tr><td><code>INTEL_DEBATE_ROUNDS</code></td><td>1</td><td>Bull / bear rounds per brief (each round adds 2 AI calls)</td></tr>
+<tr><td><code>INTEL_FILTER_MIN_BRIEFS</code></td><td>20</td><td>Settled directional briefs needed before the AI filter can act</td></tr>
+</table></div>
+<p>Restart the web server and the worker after changing <code>.env</code>. For the Anthropic provider also run <code>pip install anthropic</code>.</p>
 
 <!-- ================================================================== -->
-<h2 id="glossary">15. Glossary (A–Z)</h2>
+<h2 id="glossary">16. Glossary (A–Z)</h2>
 <p class="muted">Use the search box in the sidebar to filter this list.</p>
 <p id="noresult" class="muted hidden">No glossary entries match.</p>
 <dl class="gloss" id="gloss">
@@ -866,6 +1007,7 @@ Treat every result as something to test, not a promise.</div>
 <div><dt>Cooldown</dt><dd>Protection: wait N bars after an exit before entering again. <span class="cat">Protections</span></dd></div>
 <div><dt>Curve-fitting (overfitting)</dt><dd>Settings tuned so tightly to past data that they fail on new data. Detected by out-of-sample and walk-forward tests. <span class="cat">Testing</span></dd></div>
 <div><dt>CVD (cumulative volume delta)</dt><dd>Running total of delta; rising = buyers have been more aggressive. <span class="cat">Order flow</span></dd></div>
+<div><dt>Daily AI budget</dt><dd>The most the app may spend on AI calls per day (and the most calls per day). New calls stop once reached. <span class="cat">Intel</span></dd></div>
 <div><dt>Delta</dt><dd>Taker-buy volume minus taker-sell volume for a bar or day. <span class="cat">Order flow</span></dd></div>
 <div><dt>Delisted</dt><dd>No longer traded on the exchange. The daily identity check catches it. <span class="cat">Coins</span></dd></div>
 <div><dt>Drawdown / Max drawdown</dt><dd>Fall from a peak in equity; the largest such fall. <span class="cat">Metrics</span></dd></div>
@@ -878,12 +1020,16 @@ Treat every result as something to test, not a promise.</div>
 <div><dt>Force exit</dt><dd>Button on a bot page: sell the bot's position now. <span class="cat">Bots</span></dd></div>
 <div><dt>Fact sheet</dt><dd>The data an AI brief's agents are given; every number in a brief should come from it. <span class="cat">Intel</span></dd></div>
 <div><dt>Forward-only</dt><dd>Only data <i>after</i> something formed may be used to judge it. No hindsight. <span class="cat">Zones</span></dd></div>
+<div><dt>FRED</dt><dd>The US Federal Reserve's public economic data service; source of the rates and dollar index on the Intel page. <span class="cat">Intel</span></dd></div>
 <div><dt>Funding rate</dt><dd>Futures payment every 8 h between longs and shorts. When positive, longs pay. <span class="cat">Futures</span></dd></div>
 <div><dt>Futures (perpetual)</dt><dd>Contracts that track a coin's price with leverage, allowing shorts. QF-gate backtests them using spot prices. <span class="cat">Futures</span></dd></div>
 <div><dt>Gap (data)</dt><dd>Minutes missing from stored history. Shown under Data quality and fixed with Repair gaps. <span class="cat">Data</span></dd></div>
+<div><dt>Grounding checks</dt><dd>Checks run on a brief's answer: wrong-side or out-of-range levels are dropped, prices not in the fact sheet are flagged. <span class="cat">Intel</span></dd></div>
 <div><dt>Heartbeat</dt><dd>Regular "I'm alive" signal from the worker and stream that drives the header's green dots. <span class="cat">Services</span></dd></div>
 <div><dt>Heatmap</dt><dd>Grid coloured by how many touches happened per day and price band (Zones), or by result per pair of settings (Sweep). <span class="cat">Zones / Testing</span></dd></div>
 <div><dt>Held / Broke / Inside / Live</dt><dd>Result of a zone touch: closed back where it came from / closed through / closed inside / today, not finished. <span class="cat">Zones</span></dd></div>
+<div><dt>Hit rate (briefs)</dt><dd>How often directional briefs were right: alpha had the sign of the rating. <span class="cat">Intel</span></dd></div>
+<div><dt>Horizon (brief)</dt><dd>How far ahead a brief looks (24 h by default), and when it is scored. <span class="cat">Intel</span></dd></div>
 <div><dt>Hotspot</dt><dd>A price band revisited on the most distinct days. These are the strongest recurring levels. <span class="cat">Zones</span></dd></div>
 <div><dt>In-sample / Out-of-sample (OOS)</dt><dd>The data used to choose settings / the held-back later data used only to test them. <span class="cat">Testing</span></dd></div>
 <div><dt>Interval / Timeframe</dt><dd>Bar length: 1m, 5m, 15m, 1h, 4h, 1d. <span class="cat">Data</span></dd></div>
@@ -893,6 +1039,7 @@ Treat every result as something to test, not a promise.</div>
 <div><dt>Leverage</dt><dd>Position value ÷ margin. 5× means a 1% move changes your margin by 5%. <span class="cat">Futures</span></dd></div>
 <div><dt>Limit order</dt><dd>An order at a set price that fills only if price trades through it. <span class="cat">Orders</span></dd></div>
 <div><dt>Liquidation</dt><dd>Futures position closed by the exchange when losses eat the margin. In QF-gate it costs the whole margin. <span class="cat">Futures</span></dd></div>
+<div><dt>LLM</dt><dd>Large language model: the AI that writes the brief's reports (e.g. Claude). <span class="cat">Intel</span></dd></div>
 <div><dt>Look-ahead (bias)</dt><dd>A strategy accidentally using future data. The look-ahead check detects it. <span class="cat">Testing</span></dd></div>
 <div><dt>Maintenance margin</dt><dd>Minimum margin before liquidation; sets the liquidation price. <span class="cat">Futures</span></dd></div>
 <div><dt>Market order</dt><dd>Buy or sell immediately at the best available prices (taker). <span class="cat">Orders</span></dd></div>
@@ -902,6 +1049,8 @@ Treat every result as something to test, not a promise.</div>
 <div><dt>Paper trading</dt><dd>Running a strategy on live bars with simulated fills at modelled prices. <span class="cat">Testing</span></dd></div>
 <div><dt>Partial take-profit</dt><dd>Selling part of a position at a profit level and letting the rest run. <span class="cat">Exits</span></dd></div>
 <div><dt>PDH / PDL</dt><dd>Previous day's high / previous day's low (UTC day by default). Key reference levels. <span class="cat">Levels</span></dd></div>
+<div><dt>Point in time</dt><dd>Using only what was known at that moment. News is dated by when we first saw it, briefs by when they finished. <span class="cat">Intel</span></dd></div>
+<div><dt>Polymarket</dt><dd>A prediction market; its prices are the crowd's odds of an event (e.g. a BTC price level by a date). <span class="cat">Intel</span></dd></div>
 <div><dt>Portfolio backtest</dt><dd>One strategy on several coins sharing one balance and a max number of open trades. <span class="cat">Testing</span></dd></div>
 <div><dt>Position in range</dt><dd>Where the current price sits between the period's low (0%) and high (100%). <span class="cat">Scanner</span></dd></div>
 <div><dt>Precision</dt><dd>Whether a day's high/low time is exact to 1 minute or to 5 minutes. <span class="cat">Data</span></dd></div>
@@ -913,11 +1062,13 @@ Treat every result as something to test, not a promise.</div>
 <div><dt>R (R multiple)</dt><dd>The risk unit: entry − stop = 1R. A +2R trade made twice what it risked. <span class="cat">Metrics</span></dd></div>
 <div><dt>Range %</dt><dd>(High − low) ÷ low over a period: a volatility measure. <span class="cat">Market</span></dd></div>
 <div><dt>Reclaim</dt><dd>Price closing back above a level it had just fallen below. <span class="cat">Strategy</span></dd></div>
+<div><dt>Review (rating)</dt><dd>A brief whose answer couldn't be read. Not a Hold; not scored. <span class="cat">Intel</span></dd></div>
 <div><dt>ROI target / decay</dt><dd>Take profit at a % gain; with decay, the target falls over time toward break-even. <span class="cat">Exits</span></dd></div>
 <div><dt>Scorecard (briefs)</dt><dd>How settled AI briefs did per rating and per coin: return, alpha vs BTC, hit rate, edge. <span class="cat">Intel</span></dd></div>
 <div><dt>Scale in</dt><dd>Adding to a position at lower prices in fixed steps. <span class="cat">Sizing</span></dd></div>
 <div><dt>Scanner</dt><dd>On-demand deep analysis of one coin on any exchange, with nothing stored. <span class="cat">Tabs</span></dd></div>
 <div><dt>Screener</dt><dd>Filtered list of every pair on one exchange or all combined. <span class="cat">Tabs</span></dd></div>
+<div><dt>Sentiment (news)</dt><dd>Bullish / bearish / neutral label from a simple word count in the headline. A rough mood, not a model. <span class="cat">Intel</span></dd></div>
 <div><dt>Sharpe ratio</dt><dd>Return per unit of volatility. <span class="cat">Metrics</span></dd></div>
 <div><dt>Short</dt><dd>Profiting from a fall: sell first, buy back lower. Futures only here. <span class="cat">Futures</span></dd></div>
 <div><dt>Signal</dt><dd>A strategy's output: buy (with stop and target) or sell. <span class="cat">Strategy</span></dd></div>
@@ -948,7 +1099,7 @@ Treat every result as something to test, not a promise.</div>
 </dl>
 
 <!-- ================================================================== -->
-<h2 id="faq">16. Troubleshooting</h2>
+<h2 id="faq">17. Troubleshooting</h2>
 <div class="tablewrap"><table>
 <tr><th>Symptom</th><th>Cause and fix</th></tr>
 <tr><td>Header dot for <b>worker</b> is red; jobs stay <i>queued</i></td><td>The worker isn't running. Start <code>python manage.py run_worker</code>.</td></tr>
@@ -960,9 +1111,18 @@ Treat every result as something to test, not a promise.</div>
 <tr><td>Zone strategy makes no trades at first</td><td>It needs <code>lookback_days</code> of completed history first.</td></tr>
 <tr><td>Bot entry shows <i>blocked</i></td><td>A risk limit or halt stopped it. See the reason on the bot page and the Control page.</td></tr>
 <tr><td>"Bad Request (400)" when opening via ngrok</td><td>The tunnel host isn't in <code>DJANGO_ALLOWED_HOSTS</code> / <code>DJANGO_CSRF_TRUSTED_ORIGINS</code> (free ngrok URLs change on restart).</td></tr>
+<tr><td>No <b>AI brief</b> button anywhere</td><td>AI is off: set <code>INTEL_LLM_PROVIDER</code> (and its key) in <code>.env</code> and restart. The Intel page says "AI briefs are off".</td></tr>
+<tr><td>Brief failed: "anthropic package is not installed"</td><td>Run <code>pip install anthropic</code>, restart, and start a new brief.</td></tr>
+<tr><td>Brief failed: "Anthropic API 401" / "403"</td><td>The key is missing or wrong. Check <code>ANTHROPIC_API_KEY</code> in <code>.env</code>.</td></tr>
+<tr><td>Brief failed: "Daily AI budget … reached"</td><td>The spend or call cap was hit. It resets at midnight UTC, or raise <code>INTEL_LLM_DAILY_BUDGET_USD</code>.</td></tr>
+<tr><td>Brief stays "Queued"</td><td>A worker running old code doesn't know about briefs: restart it. Without a worker, briefs start inside the web server.</td></tr>
+<tr><td>Brief shows "unverified numbers"</td><td>The model wrote prices that aren't in its fact sheet. Read those parts with suspicion; the checked levels are still shown.</td></tr>
+<tr><td>Rating is "Review"</td><td>The final answer couldn't be read. It's not scored. Run the brief again.</td></tr>
+<tr><td>News: "reddit r/CryptoCurrency: HTTP 403"</td><td>Reddit refuses apps that aren't logged in. The other sources still work. Set <code>INTEL_NEWS_REDDIT=false</code> to stop trying.</td></tr>
+<tr><td>AI filter "inactive"</td><td>Working as designed: it waits until the scorecard has 20 settled directional briefs with a positive edge.</td></tr>
 <tr><td>Great backtest, bad paper results</td><td>Classic curve-fitting. Check out-of-sample, walk-forward, trade count and fees.</td></tr>
 </table></div>
-<p class="muted" style="margin-top:40px;font-size:13px">QF-gate user manual · written for the current version (multi-exchange Screener and Scanner, Phases 1–6). Developer details are in README.md; the project plan is in ROADMAP.md.</p>
+<p class="muted" style="margin-top:40px;font-size:13px">QF-gate user manual · written for the current version (Phases 1–7: multi-exchange Screener and Scanner, Intel and AI briefs, trade journal). Developer details are in README.md; the project plan is in ROADMAP.md.</p>
 </main>
 </div>
 <script>
