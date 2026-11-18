@@ -158,9 +158,10 @@ def start(trigger: str = "manual", background: bool = True) -> DailyNote | None:
     """Write a note now (one at a time). Returns the note, or None when AI is off or one is already running."""
     if not llm.enabled():
         return None
-    stale = timezone.now() - timedelta(minutes=STALE_MINUTES)
+    limit = max(STALE_MINUTES, settings.INTEL.get("BRIEF_STALE_MINUTES", 0) // 4)
+    stale = timezone.now() - timedelta(minutes=limit)
     DailyNote.objects.filter(status=DailyNote.Status.RUNNING, created_at__lt=stale).update(
-        status=DailyNote.Status.FAILED, error="Interrupted (no result after 15 minutes)", finished_at=timezone.now())
+        status=DailyNote.Status.FAILED, error=f"Interrupted (no result after {limit} minutes)", finished_at=timezone.now())
     if DailyNote.objects.filter(status=DailyNote.Status.RUNNING).exists():
         return None
     note = DailyNote.objects.create(date=timezone.now().date(), trigger=trigger)

@@ -160,7 +160,8 @@ def _openai_like(model_id: str, system: str, user: str, max_tokens: int, effort:
     last = LLMError(f"{provider()} failed")
     for attempt in range(3):
         try:
-            r = requests.post(f"{base}/chat/completions", json=body, headers=headers, timeout=300)
+            r = requests.post(f"{base}/chat/completions", json=body, headers=headers,
+                              timeout=cfg().get("LLM_TIMEOUT_SECONDS", 300))
         except requests.RequestException as exc:
             last = LLMError(f"{provider()} unreachable ({exc.__class__.__name__})")
         else:

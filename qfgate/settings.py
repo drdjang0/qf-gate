@@ -218,6 +218,11 @@ INTEL = {
     "BRIEF_HORIZON_HOURS": int(os.environ.get("INTEL_BRIEF_HORIZON_HOURS", "24")),
     "DEBATE_ROUNDS": int(os.environ.get("INTEL_DEBATE_ROUNDS", "1")),
     "FILTER_MIN_BRIEFS": int(os.environ.get("INTEL_FILTER_MIN_BRIEFS", "20")),
+    # Slow self-hosted models (e.g. a CPU-only server with one slot): longer per-call timeout, calls one at a
+    # time instead of the 4 analysts / 3 risk views in parallel, and more time before a brief counts as stuck.
+    "LLM_TIMEOUT_SECONDS": int(os.environ.get("INTEL_LLM_TIMEOUT_SECONDS", "300")),
+    "LLM_PARALLEL": os.environ.get("INTEL_LLM_PARALLEL", "true").lower() == "true",
+    "BRIEF_STALE_MINUTES": int(os.environ.get("INTEL_BRIEF_STALE_MINUTES", "20")),
     "CRITIC": os.environ.get("INTEL_CRITIC", "false").lower() == "true",  # 7.13: one extra checking call per brief
     "NOTE_HOUR_UTC": int(os.environ.get("INTEL_NOTE_HOUR_UTC", "6")),  # 7.11 morning note; -1 = only the button
     "NOTE_MAX_COINS": int(os.environ.get("INTEL_NOTE_MAX_COINS", "15")),

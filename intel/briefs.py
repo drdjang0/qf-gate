@@ -548,8 +548,9 @@ def start_recheck(b: Brief, background: bool = True) -> bool:
         return False
     now = timezone.now()
     for r in b.rechecks or []:
-        if r.get("status") == "running" and r.get("at", "") < (now - timedelta(minutes=RECHECK_STALE_MINUTES)).isoformat():
-            r.update(status="failed", error="Interrupted (no result after 10 minutes)")
+        limit = max(RECHECK_STALE_MINUTES, settings.INTEL.get("BRIEF_STALE_MINUTES", 0) // 4)
+        if r.get("status") == "running" and r.get("at", "") < (now - timedelta(minutes=limit)).isoformat():
+            r.update(status="failed", error=f"Interrupted (no result after {limit} minutes)")
     if b.recheck_running:
         b.save(update_fields=["rechecks"])
         return False
@@ -566,9 +567,13 @@ def start_recheck(b: Brief, background: bool = True) -> bool:
 def _thread(pk: int) -> None:
     close_old_connections()
     try:
-        run(Brief.objects.select_related("coin").get(pk=pk))
+        run(Brief.objects.select_related("coin").get(pk=pk), parallel=settings.INTEL.get("LLM_PARALLEL", True))
     finally:
         connection.close()
+
+
+def stale_minutes() -> int:
+    return max(STALE_MINUTES, settings.INTEL.get("BRIEF_STALE_MINUTES", STALE_MINUTES))
 
 
 def start(pk: int) -> bool:
@@ -582,9 +587,9 @@ def start(pk: int) -> bool:
 
 def run_queued() -> int:
     """Worker periodic task: fail briefs stuck too long, then start the oldest queued one if none is running."""
-    stale = timezone.now() - timedelta(minutes=STALE_MINUTES)
+    stale = timezone.now() - timedelta(minutes=stale_minutes())
     Brief.objects.filter(status=Brief.Status.RUNNING, started_at__lt=stale).update(
-        status=Brief.Status.FAILED, error="Interrupted (no result after 20 minutes)", progress="Failed",
+        status=Brief.Status.FAILED, error=f"Interrupted (no result after {stale_minutes()} minutes)", progress="Failed",
         finished_at=timezone.now())
     if Brief.objects.filter(status=Brief.Status.RUNNING).exists():
         return 0
