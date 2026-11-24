@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "trading",
     "intel",
     "cascades",
+    "ledger",
 ]
 
 MIDDLEWARE = [
@@ -154,6 +155,14 @@ GATE = {
     "API_KEY": os.environ.get("GATE_API_KEY", ""),
     "API_SECRET": os.environ.get("GATE_API_SECRET", ""),
     "TIMEOUT": float(os.environ.get("GATE_TIMEOUT", "20")),
+}
+
+# Portfolio ledger: importing the real Gate.io account's history. A separate READ-ONLY key
+# (spot + wallet read; no trading, no withdrawals). Read from the environment only.
+LEDGER = {
+    "GATE_KEY": os.environ.get("GATE_READ_API_KEY", ""),
+    "GATE_SECRET": os.environ.get("GATE_READ_API_SECRET", ""),
+    "HISTORY_START": os.environ.get("LEDGER_HISTORY_START", "2017-01-01"),
 }
 
 # Bots, alerts and live trading. Secrets come from the environment only, never the database.

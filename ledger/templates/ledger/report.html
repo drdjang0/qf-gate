@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}P&L report · Portfolio · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h2 style="margin:0">Profit &amp; loss report</h2>
+    <span class="badge">{{ scope_label }}</span>
+    <span style="margin-left:auto"><a class="btn" href="?{{ request.GET.urlencode }}{% if request.GET %}&{% endif %}format=csv">Download CSV</a></span>
+  </div>
+  {% include "ledger/_filters.html" with tab="report" show_asset=1 show_dates=1 show_method=1 %}
+  <p class="muted" style="font-size:13px">{% if f.asset %}<b>{{ f.asset|upper }}</b>{% else %}All coins{% endif %},
+    {% if start %}from {{ start|date:"Y-m-d" }}{% else %}from the first record{% endif %} {% if end %}to {{ f.end|date:"Y-m-d" }} (inclusive){% else %}to now{% endif %}, UTC.
+    <b>Realised P&amp;L</b> counts only sales made in this period, against what those coins cost by the P&amp;L method
+    selected above, so coins bought before the period are costed correctly.</p>
+  {% for quote, t in rep.totals.items %}
+  <div class="stats">
+    <div><span class="muted">Spent on buys</span><b>{{ t.spent|floatformat:2 }} {{ quote }}</b></div>
+    <div><span class="muted">Received from sells</span><b>{{ t.received|floatformat:2 }} {{ quote }}</b></div>
+    <div><span class="muted">Fees</span><b>{{ t.fees|floatformat:2 }}</b></div>
+    <div><span class="muted">Realised P&amp;L</span><b class="{% if t.realised > 0 %}ok{% elif t.realised < 0 %}err{% endif %}">{{ t.realised|floatformat:2 }} {{ quote }}</b><small class="muted">after fees</small></div>
+  </div>
+  {% endfor %}
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>Coin</th><th class="num">Buys</th><th class="num">Bought</th><th class="num">Spent</th><th class="num">Avg buy</th>
+      <th class="num">Sells</th><th class="num">Sold</th><th class="num">Received</th><th class="num">Avg sell</th>
+      <th class="num">In / out</th><th class="num">Net change</th><th class="num">Fees</th><th class="num">Realised</th></tr></thead>
+    <tbody>{% for r in rep.rows %}
+      <tr><td><b>{{ r.asset }}</b> <span class="muted">/{{ r.quote }}{% if r.market != 'spot' %} {{ r.market }}{% endif %}</span></td>
+        <td class="num">{{ r.buys|default:0 }}</td><td class="num mono">{{ r.bought_qty|floatformat:"-8"|default:0 }}</td>
+        <td class="num">{{ r.spent|floatformat:2|default:"0.00" }}</td><td class="num mono">{{ r.avg_buy|floatformat:"-6"|default:"-" }}</td>
+        <td class="num">{{ r.sells|default:0 }}</td><td class="num mono">{{ r.sold_qty|floatformat:"-8"|default:0 }}</td>
+        <td class="num">{{ r.received|floatformat:2|default:"0.00" }}</td><td class="num mono">{{ r.avg_sell|floatformat:"-6"|default:"-" }}</td>
+        <td class="num mono muted">{% if r.in_qty or r.out_qty %}+{{ r.in_qty|floatformat:"-8"|default:0 }} / -{{ r.out_qty|floatformat:"-8"|default:0 }}{% endif %}</td>
+        <td class="num mono">{{ r.net_qty|floatformat:"-8" }}</td>
+        <td class="num muted">{{ r.fees|floatformat:2|default:"0.00" }}</td>
+        <td class="num {% if r.realised > 0 %}ok{% elif r.realised < 0 %}err{% endif %}">{{ r.realised|floatformat:2 }}</td></tr>
+    {% empty %}<tr><td colspan="13" class="muted">Nothing in this period.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Every transaction in the period ({{ rep.transactions|length }})</h3>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>When (UTC)</th><th>Account</th><th>Side</th><th>Coin</th><th class="num">Quantity</th><th class="num">Price</th>
+      <th class="num">Amount</th><th class="num">Fee value</th><th>Source</th></tr></thead>
+    <tbody>{% for t in rep.transactions %}
+      <tr><td class="mono muted">{{ t.executed_at|date:"Y-m-d H:i:s" }}</td><td>{{ t.account.name }}</td>
+        <td><span class="badge {% if t.side == 'buy' or t.side == 'in' %}ok{% else %}err{% endif %}">{% if t.kind == 'trade' %}{{ t.side }}{% else %}{{ t.get_kind_display|lower }}{% endif %}</span></td>
+        <td><b>{{ t.base }}</b><span class="muted">/{{ t.quote }}</span></td>
+        <td class="num mono">{{ t.qty|floatformat:"-8" }}</td><td class="num mono">{{ t.price|floatformat:"-8"|default:"-" }}</td>
+        <td class="num">{{ t.amount_quote|floatformat:2|default:"" }}</td>
+        <td class="num">{{ t.fee_quote|floatformat:4|default:"" }}{% if t.estimated %} <small class="warn">est.</small>{% endif %}</td>
+        <td style="white-space:normal;font-size:12.5px">{{ t.source }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

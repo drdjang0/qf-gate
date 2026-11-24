@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Portfolio · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h2 style="margin:0">Portfolio</h2>
+    <span class="badge">{{ scope_label }}</span>
+    <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+      <a class="btn" href="{% url 'ledger:transactions' %}?scope={{ f.scope }}&format=csv">Download all transactions (CSV)</a>
+      <a class="btn primary" href="{% url 'ledger:tx_new' %}">+ Add a transaction</a>
+    </span>
+  </div>
+  {% include "ledger/_filters.html" with tab="holdings" show_method=1 %}
+  <p class="muted" style="font-size:13px">Every buy, sell, deposit and withdrawal from every route (bots, paper trading, cascades,
+    your Gate.io account, manual entries) is kept here for good. Real money and simulated money are separate accounts and are
+    never added together. P&amp;L is by <b>{{ method_label }}</b>; values use Gate.io's live price.</p>
+  {% for quote, t in h.totals.items %}
+  <div class="stats">
+    <div><span class="muted">Cost of what you hold</span><b>{{ t.cost|floatformat:2 }} {{ quote }}</b></div>
+    <div><span class="muted">Value now</span><b>{{ t.value|floatformat:2 }} {{ quote }}</b>{% if t.unpriced %}<small class="warn">{{ t.unpriced }} coin(s) without a live price</small>{% endif %}</div>
+    <div><span class="muted">Unrealised P&amp;L</span><b class="{% if t.unrealised > 0 %}ok{% elif t.unrealised < 0 %}err{% endif %}">{{ t.unrealised|floatformat:2 }}</b><small class="muted">open holdings at the live price</small></div>
+    <div><span class="muted">Realised P&amp;L</span><b class="{% if t.realised > 0 %}ok{% elif t.realised < 0 %}err{% endif %}">{{ t.realised|floatformat:2 }}</b><small class="muted">from sales, after fees</small></div>
+    <div><span class="muted">Total P&amp;L</span><b class="{% if t.total > 0 %}ok{% elif t.total < 0 %}err{% endif %}">{{ t.total|floatformat:2 }} {{ quote }}</b><small class="muted">realised + unrealised</small></div>
+    <div><span class="muted">Fees paid</span><b>{{ t.fees|floatformat:2 }}</b></div>
+  </div>
+  {% empty %}
+  <p class="muted">No transactions in {{ scope_label|lower }} yet.{% if f.scope == 'real' and not configured %} To import your real Gate.io history, add a
+    read-only API key (see <a href="{% url 'ledger:accounts' %}">Accounts &amp; Gate.io sync</a>), or add transactions by hand.{% endif %}</p>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Holdings</h3>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>Coin</th><th>Market</th><th class="num">Quantity</th><th class="num">Avg cost</th><th class="num">Cost</th>
+      <th class="num">Price now</th><th class="num">Value</th><th class="num">Unrealised</th><th class="num">Realised</th><th class="num">Fees</th><th></th></tr></thead>
+    <tbody>{% for r in open_rows %}
+      <tr><td><b>{{ r.asset }}</b> <span class="muted">/{{ r.quote }}</span></td><td class="muted">{{ r.market }}</td>
+        <td class="num mono">{{ r.qty|floatformat:"-8" }}</td><td class="num mono">{{ r.avg_cost|floatformat:"-6" }}</td>
+        <td class="num">{{ r.cost|floatformat:2 }}</td><td class="num mono">{{ r.price|floatformat:"-8"|default:"-" }}</td>
+        <td class="num">{{ r.value|floatformat:2|default:"-" }}</td>
+        <td class="num {% if r.unrealised > 0 %}ok{% elif r.unrealised < 0 %}err{% endif %}">{{ r.unrealised|floatformat:2|default:"-" }}</td>
+        <td class="num {% if r.realised > 0 %}ok{% elif r.realised < 0 %}err{% endif %}">{{ r.realised|floatformat:2 }}</td>
+        <td class="num muted">{{ r.fees|floatformat:2 }}</td>
+        <td><a href="{% url 'ledger:report' %}?scope={{ f.scope }}&asset={{ r.asset }}&method={{ f.method }}">report</a>
+          {% for fl in r.flags %}<div class="warn" style="font-size:11px">⚠ {{ fl }}</div>{% endfor %}</td></tr>
+    {% empty %}<tr><td colspan="11" class="muted">Nothing held right now.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% if closed_rows %}
+  <h4>Closed (fully sold)</h4>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>Coin</th><th>Market</th><th class="num">Realised</th><th class="num">Fees</th><th>First</th><th>Last</th><th></th></tr></thead>
+    <tbody>{% for r in closed_rows %}
+      <tr><td><b>{{ r.asset }}</b> <span class="muted">/{{ r.quote }}</span></td><td class="muted">{{ r.market }}</td>
+        <td class="num {% if r.realised > 0 %}ok{% elif r.realised < 0 %}err{% endif %}">{{ r.realised|floatformat:2 }}</td>
+        <td class="num muted">{{ r.fees|floatformat:2 }}</td><td class="muted">{{ r.first_at|date:"Y-m-d" }}</td><td class="muted">{{ r.last_at|date:"Y-m-d" }}</td>
+        <td><a href="{% url 'ledger:report' %}?scope={{ f.scope }}&asset={{ r.asset }}&method={{ f.method }}">report</a>
+          {% for fl in r.flags %}<div class="warn" style="font-size:11px">⚠ {{ fl }}</div>{% endfor %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+  <p class="muted" style="font-size:12px">{{ count }} transaction(s). <b>Average cost</b>: every buy is pooled into one cost price; a sale realises
+    sale proceeds minus that average. <b>FIFO</b>: the oldest coins count as sold first (the usual tax rule). Both use the same fees and give
+    the same total once a coin is fully sold; they differ while you still hold some.</p>
+</div>
+
+{% if gate %}
+<div class="card">
+  <h3 style="margin-top:0">Gate.io account check</h3>
+  {% if not configured %}
+    <p class="muted">Not connected. Add a <b>read-only</b> Gate.io API key to import your real trades, deposits and withdrawals and to compare
+      the ledger with your real balances. See <a href="{% url 'ledger:accounts' %}">Accounts &amp; Gate.io sync</a>.</p>
+  {% elif check %}
+    <p class="{% if check.ok %}ok{% else %}warn{% endif %}">{{ check.at|date:"Y-m-d H:i" }} UTC: {{ check.message }}</p>
+  {% else %}
+    <p class="muted">No balance check yet. Run one on the <a href="{% url 'ledger:accounts' %}">Accounts</a> page.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

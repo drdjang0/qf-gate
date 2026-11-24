@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Accounts · Portfolio · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">Accounts &amp; Gate.io sync</h2>
+  {% include "ledger/_filters.html" with tab="accounts" tabs_only=1 %}
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>Account</th><th>Kind</th><th>Exchange</th><th class="num">Rows</th><th>Gate.io sync</th><th></th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr><td><b>{{ r.a.name }}</b>{% if r.a.note %}<div class="muted" style="font-size:12px">{{ r.a.note }}</div>{% endif %}</td>
+        <td><span class="badge {% if r.a.is_real %}ok{% endif %}">{{ r.a.get_kind_display }}</span></td>
+        <td class="muted">{{ r.a.exchange }}</td>
+        <td class="num"><a href="{% url 'ledger:transactions' %}?scope={{ r.a.pk }}">{{ r.count }}</a></td>
+        <td style="white-space:normal;font-size:12.5px">
+          {% if r.a.sync == 'gate' %}
+            {% for s in r.states %}
+              <div>{{ s.stream }}: up to {{ s.newest_done|date:"Y-m-d H:i"|default:"-" }}, back to {{ s.oldest_done|date:"Y-m-d"|default:"-" }}
+                {% if s.backfill_complete %}<span class="badge ok">history complete</span>{% else %}<span class="badge warn">importing older history</span>{% endif %}
+                · {{ s.rows }} rows{% if s.last_error %} <span class="err">{{ s.last_error }}</span>{% endif %}</div>
+            {% empty %}<span class="muted">{% if configured %}Not synced yet.{% else %}No read-only key set.{% endif %}</span>{% endfor %}
+            {% if r.check %}<div class="{% if r.check.ok %}ok{% else %}warn{% endif %}">Balance check {{ r.check.at|date:"Y-m-d H:i" }}: {{ r.check.message }}</div>{% endif %}
+          {% else %}<span class="muted">-</span>{% endif %}</td>
+        <td style="white-space:nowrap">
+          {% if r.a.sync == 'gate' and configured %}
+            <form method="post" action="{% url 'ledger:account_action' r.a.pk 'sync' %}" style="display:inline">{% csrf_token %}<button class="btn">Sync now</button></form>
+            <form method="post" action="{% url 'ledger:account_action' r.a.pk 'check' %}" style="display:inline">{% csrf_token %}<button class="btn">Check balances</button></form>
+          {% endif %}
+          <a class="btn" href="{% url 'ledger:account_edit' r.a.pk %}">Edit</a></td></tr>
+      {% if r.check and not r.check.ok %}
+      <tr><td colspan="6"><details><summary>Balance differences ({{ r.check.at|date:"Y-m-d H:i" }})</summary>
+        <table><thead><tr><th>Currency</th><th class="num">Ledger</th><th class="num">Gate.io</th><th class="num">Difference</th></tr></thead>
+          <tbody>{% for b in r.check.rows %}{% if not b.ok %}<tr><td>{{ b.currency }}</td><td class="num mono">{{ b.ledger }}</td>
+            <td class="num mono">{{ b.exchange }}</td><td class="num mono err">{{ b.diff }}</td></tr>{% endif %}{% endfor %}</tbody></table>
+      </details></td></tr>
+      {% endif %}
+    {% endfor %}</tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Connecting your real Gate.io account</h3>
+  {% if configured %}<p class="ok">A read-only key is set. New trades, deposits and withdrawals are imported every 5 minutes; older history is
+    fetched backwards, 30 days per request, until the account's history start date. Balances are checked once a day.</p>
+  {% else %}<p class="warn">No read-only key yet. QF-gate's own bots, paper trading and cascades are recorded without one.</p>{% endif %}
+  <ol style="font-size:14px">
+    <li>On Gate.io: <i>API Management</i> → create a key with <b>read-only</b> permission for <b>Spot</b> and <b>Wallet</b>. No trading, no withdrawals. Restrict it to your IP if you can.</li>
+    <li>Put it in the <code>.env</code> file next to <code>manage.py</code>: <code>GATE_READ_API_KEY=...</code> and <code>GATE_READ_API_SECRET=...</code>, then restart the web server and the worker.</li>
+    <li>Optional: on the Gate.io account's <b>Edit</b> page, set <i>History start</i> to when you opened the account, so the first import doesn't walk further back than needed.</li>
+    <li>Click <b>Sync now</b>, then <b>Check balances</b> once the history shows <i>complete</i>.</li>
+  </ol>
+  <p class="muted" style="font-size:13px">Gate.io only returns 30 days of history per request and keeps the last 7 days by default, so the
+    first import walks back window by window. Once imported, rows stay here for good. Every row keeps Gate.io's own id, so a re-import
+    never doubles anything. Earn, convert, airdrops and transfers to futures are not imported: the balance check shows them as differences,
+    and you can record each as an <i>adjustment</i>.</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Add an account</h3>
+  <p class="muted" style="font-size:13px">For money elsewhere (another exchange, a futures account, a cold wallet). Enter its trades by hand
+    with <a href="{% url 'ledger:tx_new' %}">+ Add a transaction</a>.</p>
+  <form method="post" class="filters">{% csrf_token %}
+    {% for field in form %}<label>{{ field.label }} {{ field }}{{ field.errors }}</label>{% endfor %}
+    <button class="btn primary">Add account</button>
+  </form>
+</div>
+{% endblock %}

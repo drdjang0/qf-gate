@@ -1,0 +1,27 @@
+<div class="ledger-tabs">
+  <a href="{% url 'ledger:index' %}?scope={{ f.scope }}&method={{ f.method }}" class="{% if tab == 'holdings' %}on{% endif %}">Holdings</a>
+  <a href="{% url 'ledger:transactions' %}?scope={{ f.scope }}" class="{% if tab == 'tx' %}on{% endif %}">Transactions</a>
+  <a href="{% url 'ledger:report' %}?scope={{ f.scope }}&method={{ f.method }}" class="{% if tab == 'report' %}on{% endif %}">P&amp;L report</a>
+  <a href="{% url 'ledger:accounts' %}" class="{% if tab == 'accounts' %}on{% endif %}">Accounts &amp; Gate.io sync</a>
+</div>
+{% if not tabs_only %}
+<form method="get" class="filters">
+  <label>{{ form.scope.label }} {{ form.scope }}</label>
+  {% if show_asset %}<label>{{ form.asset.label }} {{ form.asset }}</label>{% endif %}
+  {% if show_dates %}<label>{{ form.start.label }} {{ form.start }}</label><label>{{ form.end.label }} {{ form.end }}</label>{% endif %}
+  {% if show_tx %}<label>{{ form.side }}</label><label>{{ form.route }}</label><label>{{ form.kind }}</label>{% endif %}
+  {% if show_method %}<label>{{ form.method.label }} {{ form.method }}</label>{% endif %}
+  <button class="btn primary">Show</button>
+</form>
+{% endif %}
+<style>
+  .ledger-tabs { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px; }
+  .ledger-tabs a { padding:6px 12px; border:1px solid var(--line, #dde1e8); border-radius:8px; text-decoration:none; }
+  .ledger-tabs a.on { background:var(--accent, #2563eb); color:#fff; border-color:transparent; }
+  form.filters { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:6px 0 4px; }
+  form.filters label { display:flex; flex-direction:column; font-size:12px; gap:2px; }
+  form.filters input, form.filters select { min-width:120px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin:12px 0; }
+  .stats div { display:flex; flex-direction:column; }
+  .stats small { font-size:11px; }
+</style>

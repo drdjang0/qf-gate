@@ -71,6 +71,13 @@ dl.gloss dt { font-weight: 650; }
 dl.gloss dd { margin: 2px 0 0; }
 dl.gloss dd .cat { color: var(--muted); font-size: 12px; }
 .hidden { display: none !important; }
+figure.shot { margin: 14px 0 20px; max-width: 940px; }
+figure.shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+figure.shot figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+ol.steps { max-width: 860px; padding-left: 22px; }
+ol.steps > li { margin: 6px 0; }
+.diagram { max-width: 940px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 12px 0; }
+.diagram svg { display: block; width: 100%; height: auto; }
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; }
   nav.toc { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -100,6 +107,7 @@ dl.gloss dd .cat { color: var(--muted); font-size: 12px; }
     <li class="sub"><a href="#t-strategies">Strategies</a></li>
     <li class="sub"><a href="#t-cascades">Cascades</a></li>
     <li class="sub"><a href="#t-bots">Bots (Control)</a></li>
+    <li class="sub"><a href="#t-portfolio">Portfolio (ledger &amp; P&amp;L)</a></li>
     <li class="sub"><a href="#t-jobs">Jobs</a></li>
     <li class="sub"><a href="#t-export">Export all &amp; Admin</a></li>
     <li><a href="#data">5. Where the data comes from</a></li>
@@ -425,12 +433,105 @@ Treat every result as something to test, not a promise.</div>
 
 <h3 id="t-cascades">Cascades: a buy ladder with a take-profit per level</h3>
 <p>A <b>cascade</b> spreads a buy over several price levels below the market and sells each level separately. It comes from your earlier gate-cascade-bot project. It is not a normal strategy: each level has its own buy and its own take-profit sell instead of one averaged position.</p>
+
+<h4>The idea in plain words</h4>
+<p>Instead of buying 100 USDT of a coin at one price and hoping it doesn't fall, you split the money into a <b>ladder</b> of smaller buys, each one a bit lower than the last, and usually a bit bigger. If the price dips a little, only the first small buy happens. If it falls hard, you keep buying cheaper and cheaper, with more money at the lowest prices. Each piece you bought gets its <b>own</b> sell order a few % above what you paid, so every small bounce turns a piece into profit; you don't have to wait for the price to climb back to where you started.</p>
+<p>Picture it like steps going down a staircase. Each step is a <b>level</b>. Each level has three numbers: a <b>buy price</b>, an <b>amount</b> in USDT, and a <b>take-profit %</b> (the sell price is the fill price plus that %).</p>
+<div class="diagram" role="img" aria-label="Diagram: six buy levels below the market. The price falls through all six, each one buys, then the price bounces and the sell orders fill.">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" style="font: 11px system-ui, sans-serif">
+  <g style="stroke: var(--line)" stroke-width="1">
+    <line x1="110" y1="98.7" x2="750" y2="98.7"/><line x1="110" y1="129.5" x2="750" y2="129.5"/><line x1="110" y1="160" x2="750" y2="160"/>
+    <line x1="110" y1="189.9" x2="750" y2="189.9"/><line x1="110" y1="219.4" x2="750" y2="219.4"/><line x1="110" y1="248.4" x2="750" y2="248.4"/>
+  </g>
+  <line x1="110" y1="57.6" x2="750" y2="57.6" style="stroke: var(--ok)" stroke-dasharray="5 4"/>
+  <line x1="110" y1="162.6" x2="750" y2="162.6" style="stroke: var(--ok)" stroke-dasharray="2 3" opacity=".7"/>
+  <g style="fill: var(--text)">
+    <text x="4" y="102">L1 buy 59,997</text><text x="4" y="133">L2 buy 59,097</text><text x="4" y="164">L3 buy 58,210</text>
+    <text x="4" y="194">L4 buy 57,337</text><text x="4" y="223">L5 buy 56,477</text><text x="4" y="252">L6 buy 55,630</text>
+  </g>
+  <text x="4" y="61" style="fill: var(--ok)">L1 sell 61,196</text>
+  <text x="612" y="176" style="fill: var(--ok)">L6 sell 58,133</text>
+  <polyline points="120,87 220,133 290,164 330,143 450,255 560,159 640,99 735,52" fill="none" style="stroke: var(--muted)" stroke-width="2"/>
+  <g style="fill: var(--accent)">
+    <circle cx="150" cy="98.7" r="5"/><circle cx="213" cy="129.5" r="5"/><circle cx="285" cy="160" r="5"/>
+    <circle cx="380" cy="189.9" r="5"/><circle cx="412" cy="219.4" r="5"/><circle cx="443" cy="248.4" r="5"/>
+  </g>
+  <g style="fill: var(--ok)"><rect x="551" y="157.6" width="10" height="10"/><rect x="718" y="52.6" width="10" height="10"/></g>
+  <text x="122" y="20" style="fill: var(--muted)">Price (grey line) falls through all six levels: each blue dot is a buy. On the bounce, the green squares are take-profit sells:</text>
+  <text x="122" y="35" style="fill: var(--muted)">the deepest level (L6) sells first, because its sell is the lowest. L1's sell only fills when the price is back above where it all began.</text>
+  <text x="750" y="292" text-anchor="end" style="fill: var(--muted)">Illustration; numbers from the example below</text>
+</svg>
+</div>
+
+<h4>A worked example</h4>
+<p>BTC is about 60,300. You set level 1 at 59,996.5 with 10 USDT, a <b>price step</b> of 1.5%, an <b>amount step</b> of 20%, 6 levels, and a take-profit of 2% growing by 0.5% per level. That gives this ladder (it is exactly what <b>Preview levels</b> shows):</p>
+<div class="tablewrap"><table>
+<tr><th>Level</th><th>Buy price</th><th>Amount</th><th>Running total</th><th>Take-profit</th><th>Sell price</th></tr>
+<tr><td>1</td><td>59,996.50</td><td>10.00</td><td>10.00</td><td>+2.0%</td><td>61,196.43</td></tr>
+<tr><td>2</td><td>59,096.55</td><td>12.00</td><td>22.00</td><td>+2.5%</td><td>60,573.97</td></tr>
+<tr><td>3</td><td>58,210.10</td><td>14.40</td><td>36.40</td><td>+3.0%</td><td>59,956.41</td></tr>
+<tr><td>4</td><td>57,336.95</td><td>17.28</td><td>53.68</td><td>+3.5%</td><td>59,343.75</td></tr>
+<tr><td>5</td><td>56,476.90</td><td>20.74</td><td>74.42</td><td>+4.0%</td><td>58,735.97</td></tr>
+<tr><td>6</td><td>55,629.74</td><td>24.88</td><td>99.30</td><td>+4.5%</td><td>58,133.08</td></tr>
+</table></div>
+<p>What happens as the price moves:</p>
+<ol class="steps">
+  <li><b>Start.</b> Only level 1's buy is placed (resting at 59,996.5). Levels 2–6 wait as <i>Pending</i>; no money is tied up in them.</li>
+  <li><b>Price dips to 59,990.</b> Level 1 buys 10 USDT of BTC. Straight away it gets a sell at 61,196.43 (+2%), and level 2's buy is placed at 59,096.55.</li>
+  <li><b>Price keeps falling.</b> Levels 2, 3, 4... buy one after another. Each new buy gets its own sell, and the next level is placed. At the bottom (level 6) you have spent 99.30 USDT at an average price well under where you started.</li>
+  <li><b>Price bounces to 58,200.</b> Level 6's sell at 58,133 fills first: that level is done with +4.5% before fees, even though BTC is still 3.5% below where you started. On the way up, levels 5, 4, 3... sell in turn.</li>
+  <li><b>Done.</b> When every level has either bought and sold or been skipped, the cascade is <i>Completed</i>. A level still waiting to buy keeps the cascade running, even after the others have sold.</li>
+</ol>
+<p>This is a real result: the same settings backtested on BTC from 25 Oct to 24 Nov 2026 bought all 6 levels during the 20–21 Nov drop and sold all 6 on the bounce, for <b>+3.08 USDT (+3.1% on the money used)</b>, while just holding BTC over the month lost 25.5%. (A backtest is not a promise; in a fall that doesn't bounce, the bought levels sit there with open losses.)</p>
+
+<h4>The rules that keep it safe</h4>
 <ul>
   <li><b>One buy rests at a time.</b> Level 2 is only placed after level 1 has bought, so a fast crash can't spend the whole ladder at once.</li>
   <li><b>A take-profit per level.</b> Each bought level gets a sell at its fill price + its take-profit %. Sells never hold up the next level.</li>
   <li><b>Skip-ahead.</b> Before placing a level, the current price is checked. If the market is already at or below that level's buy price, it is skipped and the next deeper level is tried. The last level is placed anyway, so that money isn't left unused.</li>
   <li><b>Trigger (optional).</b> The cascade waits until the price trades down to the trigger, then level 1 goes live.</li>
 </ul>
+<div class="note"><b>Why skip-ahead?</b> A buy order placed <i>above</i> the market would fill at once at the market price, not at the level's price. Example: level 2 just bought, and in the same minute the price crashed to 57,000. Levels 3 (58,210) and 4 (57,337) are already above the market, so they are skipped and level 5 (56,477) is placed instead. The skipped levels' money stays unspent; the <i>What happened</i> log shows each skip and the price that caused it.</div>
+<div class="tip"><b>Choosing settings.</b> The <b>depth</b> (how far below level 1 the last level sits) is about <i>price step × (levels − 1)</i>: 1.5% × 5 ≈ 7.3% in the example. A deeper ladder survives bigger drops but ties up more money. A bigger <b>amount step</b> puts more money at the lowest prices, so the average cost falls faster. Run a <b>backtest</b> on a few months of the coin's history before starting a dry-run.</div>
+
+<h4>How to use it, step by step</h4>
+<ol class="steps">
+  <li><b>Open Cascades</b> in the header. The page lists your cascades (top) and your cascade backtests (bottom). The two buttons at the top right start everything.</li>
+</ol>
+<figure class="shot"><a href="docs/manual/cascades-6-list.png"><img src="docs/manual/cascades-6-list.png" alt="The Cascades page: a list of cascades with status, invested, realised, open P&amp;L and last price, and a list of cascade backtests with bars, period, levels bought, realised and ROI" loading="lazy"></a>
+  <figcaption>The Cascades page. <b>Backtest a cascade</b> tests settings on history; <b>+ New cascade</b> starts a dry-run on live prices. Click a <b>#number</b> to open one.</figcaption></figure>
+<ol class="steps" start="2">
+  <li><b>Backtest first.</b> Click <b>Backtest a cascade</b>. Pick the coin, the candle size (<i>5 minutes</i> is a good balance) and the period. The coin must have its history synced on the Coins page.</li>
+  <li><b>Set the levels.</b> Leave <b>% steps</b> selected and fill in level 1's buy price and amount, the price step, amount step, number of levels, take-profit and take-profit step. A good level 1 is a little under the current price.</li>
+  <li><b>Click Preview levels.</b> The table underneath shows every level before anything runs: buy price, amount, running total, take-profit and sell price. The line above it tells you the total money needed and how deep the ladder goes. Change a number and preview again until it looks right.</li>
+</ol>
+<figure class="shot"><a href="docs/manual/cascades-1-backtest-form.png"><img src="docs/manual/cascades-1-backtest-form.png" alt="The Backtest a cascade form filled in for BTC with 6 levels, and the preview table below it showing each level's buy price, amount, running total, take-profit and sell price" loading="lazy"></a>
+  <figcaption>The backtest form after <b>Preview levels</b>: 6 levels, 99.30 USDT in total, the last level 7.28% below level 1.</figcaption></figure>
+<ol class="steps" start="5">
+  <li><b>Click Run backtest.</b> The report shows how many levels bought, the money used (<i>Invested</i>), the profit from levels that sold (<i>Realised</i>), anything still open at the end valued at the last price, the <i>Total</i> and, for comparison, <i>Buy and hold</i>. The levels table shows when each level bought and sold.</li>
+</ol>
+<figure class="shot"><a href="docs/manual/cascades-2-backtest-report.png"><img src="docs/manual/cascades-2-backtest-report.png" alt="A cascade backtest report: 6 levels bought, 99.30 invested, 3.08 realised, 3.10% total, buy and hold -25.49%, and a table of each level's buy and sell times" loading="lazy"></a>
+  <figcaption>A backtest report. <b>Change and re-run</b> opens the form with the same settings; <b>Start as dry-run cascade</b> copies them into a new live dry-run.</figcaption></figure>
+<ol class="steps" start="6">
+  <li><b>Start a dry-run.</b> From a good backtest click <b>Start as dry-run cascade</b>, or click <b>+ New cascade</b> on the Cascades page. The form is the same, without the period. <b>Preview levels</b> here also shows the <b>live price now</b>, so you can check level 1 sits where you want it. Leave <i>Trigger price</i> empty to start at once, or enter a price for the cascade to wait for.</li>
+</ol>
+<figure class="shot"><a href="docs/manual/cascades-4-create-preview.png"><img src="docs/manual/cascades-4-create-preview.png" alt="The New dry-run cascade form with the preview table and the live price" loading="lazy"></a>
+  <figcaption>New dry-run cascade with the preview. <b>Start dry-run cascade</b> saves it and places level 1 straight away.</figcaption></figure>
+<ol class="steps" start="7">
+  <li><b>Or type the levels yourself.</b> Choose <b>Manual template</b> and write one level per line: <code>buy price, USDT amount, sell price</code>. Use this when you want exact prices, for example at support zones. The preview works out each level's take-profit % from your sell price.</li>
+</ol>
+<figure class="shot"><a href="docs/manual/cascades-3-manual-template.png"><img src="docs/manual/cascades-3-manual-template.png" alt="The New dry-run cascade form in Manual template mode with three typed lines and the preview showing 3 levels and 50 USDT" loading="lazy"></a>
+  <figcaption>Manual template: three hand-picked levels, 50 USDT in total. Level 1 is checked against the live price, so a missing or extra zero is caught.</figcaption></figure>
+<ol class="steps" start="8">
+  <li><b>Watch it run.</b> After starting you land on the cascade's page. The top shows the status, the last price and when it was checked, and the money: <i>Invested</i>, <i>Realised</i> and <i>Open P&amp;L</i>. The <b>Levels</b> table shows each level's state: <i>Buy resting</i> (waiting to buy), <i>Pending</i> (not placed yet), <i>Filled</i>, <i>Skipped</i>, and for bought levels the sell price and whether it has sold. <b>What happened</b> at the bottom is the full log. The page refreshes itself every 30 seconds while the cascade runs.</li>
+</ol>
+<figure class="shot"><a href="docs/manual/cascades-5-detail.png"><img src="docs/manual/cascades-5-detail.png" alt="A running dry-run cascade: Active status, last price, a levels table where level 1 is Buy resting and levels 2 to 6 are Pending, with Withdraw buy and Edit buttons, and the What happened log" loading="lazy"></a>
+  <figcaption>A cascade just after starting: level 1's buy rests at 60,177.40, levels 2–6 wait. The buttons at the top and per level are explained in the table below.</figcaption></figure>
+<ol class="steps" start="9">
+  <li><b>Change things while it runs.</b> <b>Edit</b> a level to move its buy price, amount or take-profit, or a resting sell's price. <b>Hold</b> pauses it (resting orders are withdrawn) and <b>Resume</b> carries on. <b>Cancel</b> stops it for good. <b>Copy</b> and <b>Backtest these settings</b> reuse its levels.</li>
+</ol>
+
+<h4>Reference</h4>
 <div class="tablewrap"><table>
 <tr><th>Setting</th><th>Meaning</th></tr>
 <tr><td><b>% steps</b></td><td>Level 1 buy price and amount; each next level is <i>price step %</i> lower and <i>amount step %</i> larger; take-profit starts at <i>take-profit %</i> and grows by <i>take-profit step %</i> per level (5 and 1 = +5%, +6%, +7%...).</td></tr>
@@ -467,6 +568,72 @@ Treat every result as something to test, not a promise.</div>
   <li><b>Live trading switch:</b> you type <code>LIVE</code> to enable. This is one of the three locks.</li>
   <li><b>Test alerts:</b> sends a test message to Telegram / webhooks.</li>
 </ul>
+
+<h3 id="t-portfolio">Portfolio: every transaction, your holdings and profit / loss</h3>
+<p>The <b>Portfolio</b> tab is QF-gate's permanent record of every buy, sell, deposit and withdrawal, whatever made it: a bot, a cascade, paper
+trading, your real Gate.io account, or an entry you typed in. From that one record it works out what you hold of each coin, what it cost,
+what it is worth now, and the profit or loss, for any coin and any period.</p>
+<ul>
+  <li><b>Accounts keep real and simulated money apart.</b> <i>Gate.io</i> is your real account. <i>Dry-run</i> holds dry-run bots and cascades,
+    <i>Paper</i> holds paper-trading sessions. You can add accounts for money elsewhere (another exchange, a futures account). The account
+    menu offers <i>All real-money accounts</i>, <i>All simulated accounts</i> or one account: real and simulated are never added together.</li>
+  <li><b>Recorded automatically.</b> Every minute the worker copies new fills from bots, paper trading and cascades into the ledger. Each fill
+    has a fixed key, so nothing is ever recorded twice, and rows stay even if the bot or cascade is deleted later.</li>
+  <li><b>Exact.</b> Amounts are stored as exact decimals (no rounding), fees are kept in the coin they were paid in, and each row keeps the
+    original record it came from.</li>
+</ul>
+<figure class="shot"><a href="docs/manual/portfolio-1-holdings.png"><img src="docs/manual/portfolio-1-holdings.png" alt="The Portfolio page: totals for cost, value now, unrealised, realised and total P&amp;L and fees, and a holdings table per coin" loading="lazy"></a>
+  <figcaption>Holdings: the totals at the top, then one row per coin with quantity, average cost, live value and P&amp;L. <b>report</b> opens that coin's P&amp;L report.</figcaption></figure>
+
+<h4>Average cost or FIFO</h4>
+<p>To know the profit of a sale you need to know what the coins you sold cost. Two common ways, switchable with <b>P&amp;L method</b>:</p>
+<div class="tablewrap"><table>
+<tr><th>Method</th><th>How a sale is costed</th><th>Example: buy 1 ETH at 100, buy 1 at 200, sell 1 at 300</th></tr>
+<tr><td><b>Average cost</b> (default)</td><td>All buys are pooled into one average price. What most exchange apps show.</td><td>Average 150: profit <b>150</b>; the ETH you keep costs 150.</td></tr>
+<tr><td><b>FIFO</b></td><td>The oldest coins count as sold first. What most tax rules use.</td><td>The 100 one is sold: profit <b>200</b>; the ETH you keep costs 200.</td></tr>
+</table></div>
+<p>Both include fees and give the same total once a coin is fully sold; they only differ while you still hold some.</p>
+
+<h4>The P&amp;L report: a coin and a period</h4>
+<p>Pick an account, a coin (or leave it empty for all) and a date range. The report shows how many buys and sells, how much was bought and
+sold, the money spent and received, the average buy and sell price, deposits and withdrawals, the net change in the coin, the fees, and the
+<b>realised profit</b> of the sales made in that period. Coins bought <i>before</i> the period are still costed correctly, because the whole
+history is replayed. Below it, every transaction in the period with its timestamp. <b>Download CSV</b> gives both tables (opens in Excel).</p>
+<figure class="shot"><a href="docs/manual/portfolio-3-report.png"><img src="docs/manual/portfolio-3-report.png" alt="The P&amp;L report for BTC: spent, received, fees and realised P&amp;L, a per-coin summary row and the list of every transaction with its time" loading="lazy"></a>
+  <figcaption>BTC across the simulated accounts: 12 buys and 11 sells, with every transaction and its time below.</figcaption></figure>
+
+<h4>Transactions</h4>
+<p>The full list, newest first, with filters for account, coin, dates, side, route (bot, cascade, paper, Gate.io, manual, transfers) and kind.
+<i>est.</i> marks an estimated value (a fee paid in GT or Gate points, the cost price of a deposit); <i>pending</i> marks a live-bot order
+waiting for Gate.io's exact trades. <b>Download CSV</b> exports what the filters show.</p>
+<figure class="shot"><a href="docs/manual/portfolio-2-transactions.png"><img src="docs/manual/portfolio-2-transactions.png" alt="The transactions list with filters and columns for time, account, route, side, coin, quantity, price, amount, fee and source" loading="lazy"></a>
+  <figcaption>Transactions with their source, for example <i>Paper #2 · BTC PDL reclaim 15m</i>.</figcaption></figure>
+
+<h4>Adding a transaction by hand</h4>
+<p><b>+ Add a transaction</b> records anything QF-gate can't see: another exchange, futures, OTC, or history older than Gate.io's API returns.
+Choose the account, a trade (buy / sell, with price and fee), a deposit, a withdrawal or an adjustment (in / out). A deposit or adjustment in
+needs a <b>cost price</b> for the profit to be right when you sell later. Manual entries can be edited and deleted; recorded fills can't (they
+are the exact record), but a deposit's cost price can be set with <b>cost</b>.</p>
+
+<h4>Connecting your real Gate.io account</h4>
+<figure class="shot"><a href="docs/manual/portfolio-4-accounts.png"><img src="docs/manual/portfolio-4-accounts.png" alt="The Accounts and Gate.io sync page: the three accounts with their row counts, instructions for adding a read-only key, and a form to add an account" loading="lazy"></a>
+  <figcaption>Accounts &amp; Gate.io sync: the accounts, how far the import has got, and the balance check.</figcaption></figure>
+<ol class="steps">
+  <li>On Gate.io, create an API key with <b>read-only</b> permission for <b>Spot</b> and <b>Wallet</b>. No trading and no withdrawal rights. This is a
+    separate key from the one live bots use.</li>
+  <li>Add it to <code>.env</code> as <code>GATE_READ_API_KEY</code> and <code>GATE_READ_API_SECRET</code> and restart the web server and the worker.</li>
+  <li>Optionally set the Gate.io account's <b>History start</b> (Edit) to when you opened your Gate.io account.</li>
+  <li>Click <b>Sync now</b>. New trades, deposits and withdrawals then arrive every 5 minutes, and older history is fetched backwards.</li>
+  <li>When every stream says <i>history complete</i>, click <b>Check balances</b>. It compares the ledger's amount of every coin with your real
+    Gate.io balance (also done once a day).</li>
+</ol>
+<div class="note"><b>Why it walks back in steps.</b> Gate.io only returns 30 days of history per request (and only the last 7 days unless asked
+for dates), so the first import goes back 30 days at a time. Once a row is in the ledger it stays, so Gate's limits don't matter after that.
+Every row keeps Gate's own trade / deposit / withdrawal id, so importing again never doubles anything. When a live bot's exact Gate.io trades
+arrive, they replace the bot's own provisional record.</div>
+<div class="warn"><b>When the balance check shows differences.</b> Not yet imported: Earn, convert, airdrops and transfers to the futures
+account (roadmap 9.6–9.8). Record each as an <i>adjustment</i>, or wait for those imports. A difference while the import is still running is
+expected.</div>
 
 <h3 id="t-jobs">Jobs</h3>
 <p>Every background task, whether you started it or the schedule did:</p>
@@ -956,6 +1123,9 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <tr><td>Paper step / bot step</td><td>every minute</td><td>Back-up for the live stream: feeds closed bars to paper sessions and bots</td></tr>
 <tr><td>Service check</td><td>every minute</td><td>Sends a "stream outage" alert when bots depend on a stream that is down</td></tr>
 <tr><td>Cascade step</td><td>every 30 seconds</td><td>Checks every running dry-run cascade at the live price (the live stream also checks on its price ticks)</td></tr>
+<tr><td>Ledger record</td><td>every minute</td><td>Copies new fills from bots, paper trading and cascades into the Portfolio ledger</td></tr>
+<tr><td>Gate.io account sync</td><td>every 5 minutes</td><td>With a read-only key: imports new trades, deposits and withdrawals, then older history 30 days at a time</td></tr>
+<tr><td>Balance check</td><td>once a day</td><td>With a read-only key: compares the ledger's coin amounts with your real Gate.io balances</td></tr>
 <tr><td>Funding sync</td><td>every 6 hours</td><td>Stores Gate.io perpetual funding rates (for futures backtests and briefs)</td></tr>
 <tr><td>News fetch</td><td>every 30 minutes (<code>INTEL_NEWS_EVERY_MINUTES</code>)</td><td>Fetches the news sources and deletes items older than 30 days</td></tr>
 <tr><td>Brief runner</td><td>every 5 seconds</td><td>Starts the oldest queued AI brief when none is running; marks briefs stuck for 20 minutes as failed</td></tr>
@@ -1042,11 +1212,12 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <p class="muted">Use the search box in the sidebar to filter this list.</p>
 <p id="noresult" class="muted hidden">No glossary entries match.</p>
 <dl class="gloss" id="gloss">
-<div><dt>Archive (trade archive)</dt><dd>Gate.io's official monthly files of every trade. QF-gate rebuilds exact 1m candles (and buy/sell volume) from them. <span class="cat">Data</span></dd></div>
 <div><dt>AI brief</dt><dd>A multi-agent AI review of one coin from the app's own data, ending in Buy / Overweight / Hold / Underweight / Sell. Advisory only. <span class="cat">Intel</span></dd></div>
 <div><dt>AI filter</dt><dd>Optional paper / dry-run entry filter that needs a recent AI brief to agree; inactive until the scorecard earns it. <span class="cat">Intel</span></dd></div>
 <div><dt>Alpha (brief)</dt><dd>The coin's return over a brief's horizon minus BTC's return. <span class="cat">Intel</span></dd></div>
+<div><dt>Archive (trade archive)</dt><dd>Gate.io's official monthly files of every trade. QF-gate rebuilds exact 1m candles (and buy/sell volume) from them. <span class="cat">Data</span></dd></div>
 <div><dt>Ask / Bid</dt><dd>Ask = lowest price a seller accepts; bid = highest price a buyer pays. <span class="cat">Market</span></dd></div>
+<div><dt>Average cost</dt><dd>The default P&amp;L method: all buys of a coin pooled into one cost price; a sale's profit is its proceeds minus that average. <span class="cat">Portfolio</span></dd></div>
 <div><dt>Backtest</dt><dd>Replaying a strategy on stored history to see how it would have done. <span class="cat">Testing</span></dd></div>
 <div><dt>Bar / Candle</dt><dd>Price summary for one period: open, high, low, close (OHLC) and volume. "Closed bar" = its period has ended. <span class="cat">Data</span></dd></div>
 <div><dt>Basis point (bp, bps)</dt><dd>0.01%. 10 bps = 0.1%. Used for slippage. <span class="cat">Costs</span></dd></div>
@@ -1059,21 +1230,22 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <div><dt>Chain / Contract address</dt><dd>The blockchain a token lives on, and its unique address there. Together they identify a coin; tickers can clash. <span class="cat">Coins</span></dd></div>
 <div><dt>CoinGecko</dt><dd>Public coin database used for icons and the list of exchanges that list a coin. <span class="cat">Coins</span></dd></div>
 <div><dt>Cooldown</dt><dd>Protection: wait N bars after an exit before entering again. <span class="cat">Protections</span></dd></div>
+<div><dt>Critic (brief)</dt><dd>Optional extra AI call that re-reads a brief's answer against its fact sheet; objections lower the confidence, never the rating. <span class="cat">Intel</span></dd></div>
 <div><dt>Curve-fitting (overfitting)</dt><dd>Settings tuned so tightly to past data that they fail on new data. Detected by out-of-sample and walk-forward tests. <span class="cat">Testing</span></dd></div>
 <div><dt>CVD (cumulative volume delta)</dt><dd>Running total of delta; rising = buyers have been more aggressive. <span class="cat">Order flow</span></dd></div>
-<div><dt>Critic (brief)</dt><dd>Optional extra AI call that re-reads a brief's answer against its fact sheet; objections lower the confidence, never the rating. <span class="cat">Intel</span></dd></div>
 <div><dt>Daily AI budget</dt><dd>The most the app may spend on AI calls per day (and the most calls per day). New calls stop once reached. <span class="cat">Intel</span></dd></div>
-<div><dt>Delta</dt><dd>Taker-buy volume minus taker-sell volume for a bar or day. <span class="cat">Order flow</span></dd></div>
 <div><dt>Delisted</dt><dd>No longer traded on the exchange. The daily identity check catches it. <span class="cat">Coins</span></dd></div>
+<div><dt>Delta</dt><dd>Taker-buy volume minus taker-sell volume for a bar or day. <span class="cat">Order flow</span></dd></div>
 <div><dt>Drawdown / Max drawdown</dt><dd>Fall from a peak in equity; the largest such fall. <span class="cat">Metrics</span></dd></div>
 <div><dt>Dry-run</dt><dd>A bot mode with real live decisions and simulated fills on the real order book. No orders are sent. <span class="cat">Bots</span></dd></div>
 <div><dt>Edge (briefs)</dt><dd>Average of rating direction x alpha over settled briefs; positive means the briefs helped. <span class="cat">Intel</span></dd></div>
 <div><dt>Engine</dt><dd>The single piece of code that turns strategy signals into trades, used by backtests, sweeps, paper and bots. <span class="cat">Core</span></dd></div>
 <div><dt>Equity</dt><dd>Cash plus the current value of open positions. <span class="cat">Metrics</span></dd></div>
 <div><dt>Exposure</dt><dd>Total value of open positions. The Control page can cap it. <span class="cat">Risk</span></dd></div>
-<div><dt>Fee (maker / taker)</dt><dd>Taker = an order that fills immediately (market); maker = a resting limit order (often cheaper). Gate spot default is 0.2%. <span class="cat">Costs</span></dd></div>
-<div><dt>Force exit</dt><dd>Button on a bot page: sell the bot's position now. <span class="cat">Bots</span></dd></div>
 <div><dt>Fact sheet</dt><dd>The data an AI brief's agents are given; every number in a brief should come from it. <span class="cat">Intel</span></dd></div>
+<div><dt>Fee (maker / taker)</dt><dd>Taker = an order that fills immediately (market); maker = a resting limit order (often cheaper). Gate spot default is 0.2%. <span class="cat">Costs</span></dd></div>
+<div><dt>FIFO</dt><dd>First in, first out: a sale uses the oldest coins first. The other P&amp;L method on the Portfolio page. <span class="cat">Portfolio</span></dd></div>
+<div><dt>Force exit</dt><dd>Button on a bot page: sell the bot's position now. <span class="cat">Bots</span></dd></div>
 <div><dt>Forward-only</dt><dd>Only data <i>after</i> something formed may be used to judge it. No hindsight. <span class="cat">Zones</span></dd></div>
 <div><dt>FRED</dt><dd>The US Federal Reserve's public economic data service; source of the rates and dollar index on the Intel page. <span class="cat">Intel</span></dd></div>
 <div><dt>Funding rate</dt><dd>Futures payment every 8 h between longs and shorts. When positive, longs pay. <span class="cat">Futures</span></dd></div>
@@ -1089,24 +1261,25 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <div><dt>In-sample / Out-of-sample (OOS)</dt><dd>The data used to choose settings / the held-back later data used only to test them. <span class="cat">Testing</span></dd></div>
 <div><dt>Interval / Timeframe</dt><dd>Bar length: 1m, 5m, 15m, 1h, 4h, 1d. <span class="cat">Data</span></dd></div>
 <div><dt>Intra-bar detail</dt><dd>Using a bar's stored 1m candles to see whether its stop or target was hit first. <span class="cat">Engine</span></dd></div>
+<div><dt>Invalidation level</dt><dd>The price a brief names as proof it was wrong. The worker records when it is hit within the brief's horizon. <span class="cat">Intel</span></dd></div>
 <div><dt>Job</dt><dd>A background task (sync, verify, levels, backtest, sweep, portfolio) run by the worker. <span class="cat">Services</span></dd></div>
 <div><dt>Kill switch</dt><dd>Control page button: sell every bot position and stop all bots. <span class="cat">Bots</span></dd></div>
+<div><dt>Ledger</dt><dd>The Portfolio's permanent record of every buy, sell, deposit and withdrawal from every route. <span class="cat">Portfolio</span></dd></div>
 <div><dt>Leverage</dt><dd>Position value ÷ margin. 5× means a 1% move changes your margin by 5%. <span class="cat">Futures</span></dd></div>
 <div><dt>Limit order</dt><dd>An order at a set price that fills only if price trades through it. <span class="cat">Orders</span></dd></div>
 <div><dt>Liquidation</dt><dd>Futures position closed by the exchange when losses eat the margin. In QF-gate it costs the whole margin. <span class="cat">Futures</span></dd></div>
-<div><dt>Invalidation level</dt><dd>The price a brief names as proof it was wrong. The worker records when it is hit within the brief's horizon. <span class="cat">Intel</span></dd></div>
 <div><dt>LLM</dt><dd>Large language model: the AI that writes the brief's reports (e.g. Claude). <span class="cat">Intel</span></dd></div>
 <div><dt>Look-ahead (bias)</dt><dd>A strategy accidentally using future data. The look-ahead check detects it. <span class="cat">Testing</span></dd></div>
 <div><dt>Maintenance margin</dt><dd>Minimum margin before liquidation; sets the liquidation price. <span class="cat">Futures</span></dd></div>
 <div><dt>Market order</dt><dd>Buy or sell immediately at the best available prices (taker). <span class="cat">Orders</span></dd></div>
 <div><dt>MFE / MAE</dt><dd>Maximum favourable / adverse excursion: the furthest price went for / against a trade while it was open, in R. Shown in the trade journal. <span class="cat">Journal</span></dd></div>
+<div><dt>Morning note</dt><dd>A daily AI summary of your active coins: top call, overnight changes, today's events, ideas with what would prove them wrong, and yesterday's calls reviewed. <span class="cat">Intel</span></dd></div>
 <div><dt>Order book</dt><dd>All resting buy (bid) and sell (ask) orders at each price. <span class="cat">Market</span></dd></div>
 <div><dt>Order flow</dt><dd>Who was aggressive: taker buyers vs taker sellers. See Delta and CVD. <span class="cat">Order flow</span></dd></div>
+<div><dt>Outside text</dt><dd>Headlines and prediction-market questions written by others. Fenced off for the AI as data, never instructions; their numbers never verify a claim. <span class="cat">Intel</span></dd></div>
 <div><dt>Paper trading</dt><dd>Running a strategy on live bars with simulated fills at modelled prices. <span class="cat">Testing</span></dd></div>
 <div><dt>Partial take-profit</dt><dd>Selling part of a position at a profit level and letting the rest run. <span class="cat">Exits</span></dd></div>
 <div><dt>PDH / PDL</dt><dd>Previous day's high / previous day's low (UTC day by default). Key reference levels. <span class="cat">Levels</span></dd></div>
-<div><dt>Morning note</dt><dd>A daily AI summary of your active coins: top call, overnight changes, today's events, ideas with what would prove them wrong, and yesterday's calls reviewed. <span class="cat">Intel</span></dd></div>
-<div><dt>Outside text</dt><dd>Headlines and prediction-market questions written by others. Fenced off for the AI as data, never instructions; their numbers never verify a claim. <span class="cat">Intel</span></dd></div>
 <div><dt>Pillars (brief)</dt><dd>The 2-4 checkable statements a brief's thesis rests on; a re-check reports each as holding, weakening or broken. <span class="cat">Intel</span></dd></div>
 <div><dt>Point in time</dt><dd>Using only what was known at that moment. News is dated by when we first saw it, briefs by when they finished. <span class="cat">Intel</span></dd></div>
 <div><dt>Polymarket</dt><dd>A prediction market; its prices are the crowd's odds of an event (e.g. a BTC price level by a date). <span class="cat">Intel</span></dd></div>
@@ -1120,25 +1293,25 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <div><dt>Quote currency</dt><dd>What a pair is priced in: the USDT in SOL/USDT. <span class="cat">Market</span></dd></div>
 <div><dt>R (R multiple)</dt><dd>The risk unit: entry − stop = 1R. A +2R trade made twice what it risked. <span class="cat">Metrics</span></dd></div>
 <div><dt>Range %</dt><dd>(High − low) ÷ low over a period: a volatility measure. <span class="cat">Market</span></dd></div>
-<div><dt>Reclaim</dt><dd>Price closing back above a level it had just fallen below. <span class="cat">Strategy</span></dd></div>
 <div><dt>Re-check (thesis)</dt><dd>One AI call on fresh data that says whether a brief's pillars still hold. Doesn't change the rating or the scorecard. <span class="cat">Intel</span></dd></div>
+<div><dt>Realised / unrealised P&amp;L</dt><dd>Realised: profit from coins already sold, after fees. Unrealised: what open holdings would make if sold at the live price. <span class="cat">Portfolio</span></dd></div>
+<div><dt>Reclaim</dt><dd>Price closing back above a level it had just fallen below. <span class="cat">Strategy</span></dd></div>
 <div><dt>Review (rating)</dt><dd>A brief whose answer couldn't be read. Not a Hold; not scored. <span class="cat">Intel</span></dd></div>
 <div><dt>ROI target / decay</dt><dd>Take profit at a % gain; with decay, the target falls over time toward break-even. <span class="cat">Exits</span></dd></div>
-<div><dt>Scenarios (brief)</dt><dd>Bull / base / bear cases with a trigger, a price level and a rough chance; checked against the fact sheet. <span class="cat">Intel</span></dd></div>
-<div><dt>Scorecard (briefs)</dt><dd>How settled AI briefs did per rating and per coin: return, alpha vs BTC, hit rate, edge. <span class="cat">Intel</span></dd></div>
 <div><dt>Scale in</dt><dd>Adding to a position at lower prices in fixed steps. <span class="cat">Sizing</span></dd></div>
 <div><dt>Scanner</dt><dd>On-demand deep analysis of one coin on any exchange, with nothing stored. <span class="cat">Tabs</span></dd></div>
+<div><dt>Scenarios (brief)</dt><dd>Bull / base / bear cases with a trigger, a price level and a rough chance; checked against the fact sheet. <span class="cat">Intel</span></dd></div>
+<div><dt>Scorecard (briefs)</dt><dd>How settled AI briefs did per rating and per coin: return, alpha vs BTC, hit rate, edge. <span class="cat">Intel</span></dd></div>
 <div><dt>Screener</dt><dd>Filtered list of every pair on one exchange or all combined. <span class="cat">Tabs</span></dd></div>
 <div><dt>Sentiment (news)</dt><dd>Bullish / bearish / neutral label from a simple word count in the headline. A rough mood, not a model. <span class="cat">Intel</span></dd></div>
-<div><dt>Skip-ahead (cascade)</dt><dd>Before a cascade places its next level it checks the price; a level the market is already at or below is skipped, except the last. <span class="cat">Cascades</span></dd></div>
-<div><dt>Source (brief)</dt><dd>Where a brief was started: Intel page, Market, coin page, Scanner, Screener → Scanner or morning note. The scorecard shows results per source. <span class="cat">Intel</span></dd></div>
-<div><dt>Thesis (brief)</dt><dd>The one falsifiable sentence a brief stands on, with its pillars and invalidation level. <span class="cat">Intel</span></dd></div>
 <div><dt>Sharpe ratio</dt><dd>Return per unit of volatility. <span class="cat">Metrics</span></dd></div>
 <div><dt>Short</dt><dd>Profiting from a fall: sell first, buy back lower. Futures only here. <span class="cat">Futures</span></dd></div>
 <div><dt>Signal</dt><dd>A strategy's output: buy (with stop and target) or sell. <span class="cat">Strategy</span></dd></div>
+<div><dt>Skip-ahead (cascade)</dt><dd>Before a cascade places its next level it checks the price; a level the market is already at or below is skipped, except the last. <span class="cat">Cascades</span></dd></div>
 <div><dt>Slippage</dt><dd>The difference between the price you expected and the price you got. <span class="cat">Costs</span></dd></div>
 <div><dt>Smart search</dt><dd>Sweep method that samples, then refines around the best results. <span class="cat">Testing</span></dd></div>
 <div><dt>Sortino ratio</dt><dd>Like Sharpe, but only penalises downside volatility. <span class="cat">Metrics</span></dd></div>
+<div><dt>Source (brief)</dt><dd>Where a brief was started: Intel page, Market, coin page, Scanner, Screener → Scanner or morning note. The scorecard shows results per source. <span class="cat">Intel</span></dd></div>
 <div><dt>Spot</dt><dd>Buying the actual coin with full payment. Long only, no leverage. <span class="cat">Market</span></dd></div>
 <div><dt>Spread</dt><dd>Ask − bid, usually as a % of the ask. A cost on every round trip. <span class="cat">Market</span></dd></div>
 <div><dt>Stop (stop-loss)</dt><dd>Price at which a losing trade is closed. <span class="cat">Exits</span></dd></div>
@@ -1149,10 +1322,11 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <div><dt>Sync</dt><dd>Downloading new or missing candles and recomputing levels. <span class="cat">Data</span></dd></div>
 <div><dt>Taker buy / sell volume</dt><dd>Volume from aggressive buyers / sellers (orders that crossed the spread). <span class="cat">Order flow</span></dd></div>
 <div><dt>Target (take-profit)</dt><dd>Price at which a winning trade is closed. <span class="cat">Exits</span></dd></div>
+<div><dt>Thesis (brief)</dt><dd>The one falsifiable sentence a brief stands on, with its pillars and invalidation level. <span class="cat">Intel</span></dd></div>
 <div><dt>Ticker</dt><dd>A coin's short name (e.g. SOL). Not unique: different coins can share one. <span class="cat">Coins</span></dd></div>
 <div><dt>Time exit</dt><dd>Closing a trade after holding it N bars. <span class="cat">Exits</span></dd></div>
-<div><dt>Trade journal</dt><dd>Hindsight review of closed trades: excursions, what price did after each exit, a verdict per exit and lessons. <span class="cat">Journal</span></dd></div>
 <div><dt>Touch</dt><dd>A later bar or day whose range overlaps a zone. <span class="cat">Zones</span></dd></div>
+<div><dt>Trade journal</dt><dd>Hindsight review of closed trades: excursions, what price did after each exit, a verdict per exit and lessons. <span class="cat">Journal</span></dd></div>
 <div><dt>Trailing stop</dt><dd>A stop that follows price up at a set distance below the highest price. <span class="cat">Exits</span></dd></div>
 <div><dt>Verify (identity)</dt><dd>Checking the chain + contract against Gate.io's currency list. <span class="cat">Coins</span></dd></div>
 <div><dt>Walk-forward</dt><dd>Repeatedly choosing settings on a past window and testing on the next one. <span class="cat">Testing</span></dd></div>

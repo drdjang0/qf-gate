@@ -219,3 +219,5 @@ filled; ours fills on real prices. Backtests read our own stored candles instead
 5. **Phase 7**: 7.1 first (no cost, useful on its own), then 7.2 and 7.3, then 7.4 with 7.5, then 7.6.
    7.7 only if the 7.6 scorecard earns it.
 6. **Phase 8**: 8.5 (live cascades) only after a cascade has run in dry-run for a while and its fills look right.
+7. **Phase 9**: add the read-only Gate key first and let the import finish; then 9.7 if the balance check shows
+   earn / convert differences, 9.6 if futures are traded, 9.8 if older history is needed.

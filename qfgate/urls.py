@@ -9,5 +9,6 @@ urlpatterns = [
     path("trading/", include("trading.urls")),
     path("intel/", include("intel.urls")),
     path("cascades/", include("cascades.urls")),
+    path("portfolio/", include("ledger.urls")),
     path("", include("market.urls")),
 ]

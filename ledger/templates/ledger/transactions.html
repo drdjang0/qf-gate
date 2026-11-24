@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Transactions · Portfolio · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h2 style="margin:0">Transactions</h2>
+    <span class="badge">{{ scope_label }}</span>
+    <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+      <a class="btn" href="?{{ query }}{% if query %}&{% endif %}format=csv">Download CSV</a>
+      <a class="btn primary" href="{% url 'ledger:tx_new' %}">+ Add a transaction</a>
+    </span>
+  </div>
+  {% include "ledger/_filters.html" with tab="tx" show_asset=1 show_dates=1 show_tx=1 %}
+  <p class="muted" style="font-size:13px">Newest first. Times are UTC. <b>Fee value</b> is the fee in the quote currency; <i>est.</i> marks a value
+    that was estimated (a fee paid in GT or points, a deposit's cost price). <i>pending</i> = a live bot order waiting for Gate.io's exact trades.</p>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>When (UTC)</th><th>Account</th><th>Route</th><th>Side</th><th>Coin</th><th class="num">Quantity</th><th class="num">Price</th>
+      <th class="num">Amount</th><th class="num">Fee</th><th class="num">Fee value</th><th>Source</th><th></th></tr></thead>
+    <tbody>{% for t in page %}
+      <tr>
+        <td class="mono muted">{{ t.executed_at|date:"Y-m-d H:i:s" }}</td>
+        <td>{{ t.account.name }}</td>
+        <td class="muted">{{ t.get_route_display }}</td>
+        <td><span class="badge {% if t.side == 'buy' or t.side == 'in' %}ok{% else %}err{% endif %}">{% if t.kind == 'trade' %}{{ t.side }}{% else %}{{ t.get_kind_display|lower }}{% endif %}</span>
+          {% if t.market != 'spot' %}<small class="muted">{{ t.market }}</small>{% endif %}</td>
+        <td><b>{{ t.base }}</b>{% if t.quote %}<span class="muted">/{{ t.quote }}</span>{% endif %}</td>
+        <td class="num mono">{{ t.qty|floatformat:"-8" }}</td>
+        <td class="num mono">{{ t.price|floatformat:"-8"|default:"-" }}</td>
+        <td class="num">{{ t.amount_quote|floatformat:2|default:"" }}</td>
+        <td class="num mono">{% if t.fee %}{{ t.fee|floatformat:"-8" }} <small class="muted">{{ t.fee_currency }}</small>{% endif %}</td>
+        <td class="num">{{ t.fee_quote|floatformat:4|default:"" }}{% if t.estimated %} <small class="warn">est.</small>{% endif %}</td>
+        <td style="white-space:normal;font-size:12.5px">{{ t.source }}{% if t.provisional %} <span class="badge warn">pending</span>{% endif %}
+          {% if t.note %}<div class="muted" style="font-size:11.5px">{{ t.note }}</div>{% endif %}</td>
+        <td>{% if t.source_key|slice:':7' == 'manual:' %}<a href="{% url 'ledger:tx_edit' t.pk %}">edit</a>
+          {% elif t.kind != 'trade' %}<a href="{% url 'ledger:tx_edit' t.pk %}" title="Set the cost price">cost</a>{% endif %}</td>
+      </tr>
+    {% empty %}<tr><td colspan="12" class="muted">No transactions match.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% if page.has_other_pages %}
+  <p>{% if page.has_previous %}<a href="?{{ query }}&page={{ page.previous_page_number }}">← newer</a>{% endif %}
+    page {{ page.number }} of {{ page.paginator.num_pages }} ({{ page.paginator.count }} rows)
+    {% if page.has_next %}<a href="?{{ query }}&page={{ page.next_page_number }}">older →</a>{% endif %}</p>
+  {% else %}<p class="muted">{{ page.paginator.count }} row(s).</p>{% endif %}
+</div>
+{% endblock %}

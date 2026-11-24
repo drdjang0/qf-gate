@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Edit account · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h2 style="margin:0">Edit account: {{ acc.name }}</h2>
+    <a href="{% url 'ledger:accounts' %}">← Accounts</a>
+  </div>
+  <form method="post" style="display:grid;gap:8px;max-width:520px;margin-top:12px">{% csrf_token %}
+    {% for field in form %}<label style="display:flex;flex-direction:column;gap:3px">{{ field.label }} {{ field }}
+      {% if field.help_text %}<small class="muted">{{ field.help_text }}</small>{% endif %}{{ field.errors }}</label>{% endfor %}
+    <button class="btn primary">Save</button>
+  </form>
+</div>
+{% endblock %}
