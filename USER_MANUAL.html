@@ -98,6 +98,7 @@ dl.gloss dd .cat { color: var(--muted); font-size: 12px; }
     <li class="sub"><a href="#t-scanner">Scanner</a></li>
     <li class="sub"><a href="#t-intel">Intel (AI, news, macro)</a></li>
     <li class="sub"><a href="#t-strategies">Strategies</a></li>
+    <li class="sub"><a href="#t-cascades">Cascades</a></li>
     <li class="sub"><a href="#t-bots">Bots (Control)</a></li>
     <li class="sub"><a href="#t-jobs">Jobs</a></li>
     <li class="sub"><a href="#t-export">Export all &amp; Admin</a></li>
@@ -421,6 +422,33 @@ Treat every result as something to test, not a promise.</div>
 <tr><td><b>Start live bot</b></td><td>Real orders. Only available when everything in <a href="#bots">section 11</a> is satisfied.</td></tr>
 <tr><td><b>Edit / Delete</b></td><td>Change settings or remove the configuration and its results.</td></tr>
 </table></div>
+
+<h3 id="t-cascades">Cascades: a buy ladder with a take-profit per level</h3>
+<p>A <b>cascade</b> spreads a buy over several price levels below the market and sells each level separately. It comes from your earlier gate-cascade-bot project. It is not a normal strategy: each level has its own buy and its own take-profit sell instead of one averaged position.</p>
+<ul>
+  <li><b>One buy rests at a time.</b> Level 2 is only placed after level 1 has bought, so a fast crash can't spend the whole ladder at once.</li>
+  <li><b>A take-profit per level.</b> Each bought level gets a sell at its fill price + its take-profit %. Sells never hold up the next level.</li>
+  <li><b>Skip-ahead.</b> Before placing a level, the current price is checked. If the market is already at or below that level's buy price, it is skipped and the next deeper level is tried. The last level is placed anyway, so that money isn't left unused.</li>
+  <li><b>Trigger (optional).</b> The cascade waits until the price trades down to the trigger, then level 1 goes live.</li>
+</ul>
+<div class="tablewrap"><table>
+<tr><th>Setting</th><th>Meaning</th></tr>
+<tr><td><b>% steps</b></td><td>Level 1 buy price and amount; each next level is <i>price step %</i> lower and <i>amount step %</i> larger; take-profit starts at <i>take-profit %</i> and grows by <i>take-profit step %</i> per level (5 and 1 = +5%, +6%, +7%...).</td></tr>
+<tr><td><b>Manual template</b></td><td>One line per level: <code>buy price, USDT amount, sell price</code>. The sell price must be above the buy price.</td></tr>
+<tr><td><b>Fee %</b></td><td>Charged on both legs and taken off what you receive (Gate spot is about 0.2%).</td></tr>
+</table></div>
+<p><b>Preview levels</b> shows every level, the running total and the sell prices before anything starts. Level 1 is checked against the live price: a buy price below 0.2x or above 3x the market is refused as a likely misplaced decimal.</p>
+<p><b>Backtest a cascade</b> replays the ladder over stored candles (sync the coin first). The rules: a buy fills on the first bar whose low reaches it; its sell can only fill from the <i>next</i> bar on (one candle can't show which came first); after a buy, the next level is chosen with that bar's low, so one crash bar can skip several levels. Sells still open at the end are valued at the last close. <b>Start as dry-run cascade</b> copies the settings into a new cascade.</p>
+<p><b>Dry-run only for now.</b> Nothing is sent to Gate.io. The worker checks every running cascade every 30 seconds, and the live stream checks a coin's cascades on its price ticks. A resting order fills when the price, live or in a stored 1-minute candle since the order was placed, trades through it. On a cascade's page:</p>
+<div class="tablewrap"><table>
+<tr><th>Button</th><th>What it does</th></tr>
+<tr><td><b>Check now</b></td><td>Runs one check at the live price straight away.</td></tr>
+<tr><td><b>Hold / Resume</b></td><td>Hold withdraws the resting buy and the resting sells. Resume puts the sells back and re-checks the next level with a fresh price.</td></tr>
+<tr><td><b>Cancel</b></td><td>Stops for good. Levels not yet bought are cancelled; bought levels keep their coins, without a sell.</td></tr>
+<tr><td><b>Withdraw buy / Reset sell / Edit</b></td><td>Per level: withdraw the resting buy (it is re-checked on the next step), reset a sell to its computed take-profit, or edit a pending level, a resting buy or a resting sell's price.</td></tr>
+<tr><td><b>What happened</b></td><td>Every event in order: armed, placed, skipped, bought, sell placed, sold, held, edited.</td></tr>
+</table></div>
+<p>The <b>kill switch</b> on the Control page stops new cascade buys too; sells keep working. Live cascades (real limit orders) are planned as roadmap item 8.5, behind the same three locks as live bots.</p>
 
 <h3 id="t-bots">Bots (the Control page)</h3>
 <p>One place for every running bot and the account-wide safety controls:</p>
@@ -927,6 +955,7 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <tr><th>Task</th><th>How often</th><th>What it does</th></tr>
 <tr><td>Paper step / bot step</td><td>every minute</td><td>Back-up for the live stream: feeds closed bars to paper sessions and bots</td></tr>
 <tr><td>Service check</td><td>every minute</td><td>Sends a "stream outage" alert when bots depend on a stream that is down</td></tr>
+<tr><td>Cascade step</td><td>every 30 seconds</td><td>Checks every running dry-run cascade at the live price (the live stream also checks on its price ticks)</td></tr>
 <tr><td>Funding sync</td><td>every 6 hours</td><td>Stores Gate.io perpetual funding rates (for futures backtests and briefs)</td></tr>
 <tr><td>News fetch</td><td>every 30 minutes (<code>INTEL_NEWS_EVERY_MINUTES</code>)</td><td>Fetches the news sources and deletes items older than 30 days</td></tr>
 <tr><td>Brief runner</td><td>every 5 seconds</td><td>Starts the oldest queued AI brief when none is running; marks briefs stuck for 20 minutes as failed</td></tr>
@@ -1026,6 +1055,7 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <div><dt>Broker</dt><dd>The part of a bot that executes orders: dry-run (simulated on the live order book) or Gate (real). <span class="cat">Bots</span></dd></div>
 <div><dt>Buy &amp; hold</dt><dd>Just buying at the start and holding to the end: the benchmark to beat. <span class="cat">Metrics</span></dd></div>
 <div><dt>Calmar ratio</dt><dd>Annual return ÷ max drawdown. <span class="cat">Metrics</span></dd></div>
+<div><dt>Cascade</dt><dd>A buy ladder: several buy levels below the market, one resting at a time, each with its own take-profit sell. See the Cascades section. <span class="cat">Cascades</span></dd></div>
 <div><dt>Chain / Contract address</dt><dd>The blockchain a token lives on, and its unique address there. Together they identify a coin; tickers can clash. <span class="cat">Coins</span></dd></div>
 <div><dt>CoinGecko</dt><dd>Public coin database used for icons and the list of exchanges that list a coin. <span class="cat">Coins</span></dd></div>
 <div><dt>Cooldown</dt><dd>Protection: wait N bars after an exit before entering again. <span class="cat">Protections</span></dd></div>
@@ -1100,6 +1130,7 @@ research desk. The idea comes from the open-source TradingAgents project, rebuil
 <div><dt>Scanner</dt><dd>On-demand deep analysis of one coin on any exchange, with nothing stored. <span class="cat">Tabs</span></dd></div>
 <div><dt>Screener</dt><dd>Filtered list of every pair on one exchange or all combined. <span class="cat">Tabs</span></dd></div>
 <div><dt>Sentiment (news)</dt><dd>Bullish / bearish / neutral label from a simple word count in the headline. A rough mood, not a model. <span class="cat">Intel</span></dd></div>
+<div><dt>Skip-ahead (cascade)</dt><dd>Before a cascade places its next level it checks the price; a level the market is already at or below is skipped, except the last. <span class="cat">Cascades</span></dd></div>
 <div><dt>Source (brief)</dt><dd>Where a brief was started: Intel page, Market, coin page, Scanner, Screener → Scanner or morning note. The scorecard shows results per source. <span class="cat">Intel</span></dd></div>
 <div><dt>Thesis (brief)</dt><dd>The one falsifiable sentence a brief stands on, with its pillars and invalidation level. <span class="cat">Intel</span></dd></div>
 <div><dt>Sharpe ratio</dt><dd>Return per unit of volatility. <span class="cat">Metrics</span></dd></div>

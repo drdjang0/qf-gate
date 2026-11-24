@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}{{ c.title }} · QF-gate{% endblock %}
+{% block head %}{% if c.is_running %}<meta http-equiv="refresh" content="30">{% endif %}{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h2 style="margin:0">{{ c.title }}</h2>
+    <span class="badge {% if c.status == 'active' %}ok{% elif c.status == 'pending_trigger' or c.status == 'held' %}warn{% elif c.status == 'cancelled' %}err{% endif %}">{{ c.get_status_display }}</span>
+    <span class="badge">dry-run</span>
+    <a href="{% url 'cascades:index' %}">← Cascades</a>
+    <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+      {% if c.is_running %}
+        <form method="post" action="{% url 'cascades:action' c.pk 'step' %}">{% csrf_token %}<button class="btn">Check now</button></form>
+        <form method="post" action="{% url 'cascades:action' c.pk 'hold' %}">{% csrf_token %}<button class="btn">Hold</button></form>
+      {% elif c.status == 'held' %}
+        <form method="post" action="{% url 'cascades:action' c.pk 'resume' %}">{% csrf_token %}<button class="btn primary">Resume</button></form>
+      {% endif %}
+      {% if c.is_running or c.status == 'held' %}
+        <form method="post" action="{% url 'cascades:action' c.pk 'cancel' %}" onsubmit="return confirm('Cancel this cascade? Levels not yet bought are cancelled; bought levels keep their coins without a sell.')">{% csrf_token %}<button class="btn danger">Cancel</button></form>
+      {% endif %}
+      <a class="btn" href="{% url 'cascades:backtest_create' %}?from_cascade={{ c.pk }}">Backtest these settings</a>
+      <a class="btn" href="{% url 'cascades:create' %}?from_cascade={{ c.pk }}">Copy</a>
+      <form method="post" action="{% url 'cascades:action' c.pk 'delete' %}" onsubmit="return confirm('Delete cascade #{{ c.pk }} and its history for good?')">{% csrf_token %}<button class="btn danger">Delete</button></form>
+    </span>
+  </div>
+  {% if c.last_error %}<p class="{% if c.last_error|slice:':11' == 'Kill switch' %}warn{% else %}err{% endif %}">{{ c.last_error }}</p>{% endif %}
+  <div class="stats">
+    <div><span class="muted">Coin</span><b>{{ c.coin.pair }}</b></div>
+    <div><span class="muted">Last price</span><b class="mono">{{ c.last_price|default_if_none:"-" }}</b>
+      <small class="muted">{{ c.last_checked_at|date:"H:i:s"|default:"never checked" }}</small></div>
+    <div><span class="muted">Trigger</span><b class="mono">{{ c.trigger_price|default_if_none:"none" }}</b></div>
+    <div><span class="muted">Invested</span><b>{{ t.invested|floatformat:2 }}</b></div>
+    <div><span class="muted">Realised</span><b class="{% if t.realized > 0 %}ok{% elif t.realized < 0 %}err{% endif %}">{{ t.realized|floatformat:2 }}</b>
+      <small class="muted">{{ t.roi_pct|floatformat:2 }}% on invested</small></div>
+    <div><span class="muted">Open P&amp;L</span><b class="{% if t.unrealized > 0 %}ok{% elif t.unrealized < 0 %}err{% endif %}">{{ t.unrealized|floatformat:2 }}</b>
+      <small class="muted">{{ t.open_qty|floatformat:"-6" }} held</small></div>
+    <div><span class="muted">Fee</span><b>{{ c.fee_pct }}%</b></div>
+    <div><span class="muted">Kind</span><b>{{ c.get_kind_display }}</b></div>
+  </div>
+  <p class="muted" style="font-size:13px">Checked every 30 s by the worker and on every live-stream tick for this coin. A resting order fills when the price
+    (live, or a stored 1-minute candle since the order was placed) trades through it. One buy rests at a time.
+    {% if c.is_running %}This page refreshes every 30 s.{% endif %}</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Levels</h3>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>#</th><th class="num">Buy price</th><th class="num">Amount</th><th class="num">TP</th><th>Buy</th><th class="num">Qty</th>
+      <th class="num">Sell price</th><th>Sell</th><th class="num">P&amp;L</th><th></th></tr></thead>
+    <tbody>{% for lv in levels %}
+      <tr>
+        <td>{{ lv.index }}</td>
+        <td class="num mono">{{ lv.target_price|floatformat:"-8" }}</td>
+        <td class="num">{{ lv.amount_usdt|floatformat:2 }}</td>
+        <td class="num">+{{ lv.take_profit_pct|floatformat:2 }}%</td>
+        <td><span class="badge {% if lv.status == 'filled' %}ok{% elif lv.status == 'placed' %}warn{% elif lv.status == 'skipped' or lv.status == 'cancelled' %}err{% endif %}">{{ lv.get_status_display }}</span>
+          {% if lv.filled_at %}<small class="muted">{{ lv.filled_at|date:"m-d H:i" }}</small>{% endif %}
+          {% if lv.skip_reason %}<small class="muted" title="{{ lv.skip_reason }}">at {{ lv.skip_price|floatformat:"-8" }}</small>{% endif %}</td>
+        <td class="num mono">{{ lv.qty|floatformat:"-6"|default:"-" }}</td>
+        <td class="num mono {% if lv.sell_status == 'none' %}muted{% endif %}">{{ lv.sell_preview|floatformat:"-8" }}</td>
+        <td>{% if lv.sell_status != 'none' %}<span class="badge {% if lv.sell_status == 'filled' %}ok{% else %}warn{% endif %}">{{ lv.get_sell_status_display }}</span>
+          {% if lv.sell_filled_at %}<small class="muted">{{ lv.sell_filled_at|date:"m-d H:i" }}</small>{% endif %}{% endif %}</td>
+        <td class="num {% if lv.pnl > 0 %}ok{% elif lv.pnl < 0 %}err{% endif %}">{% if lv.pnl is not None %}{{ lv.pnl|floatformat:2 }}{% endif %}</td>
+        <td>{% if c.is_running or c.status == 'held' %}
+          {% if lv.status == 'placed' %}<form method="post" action="{% url 'cascades:level' c.pk lv.pk 'cancel' %}" style="display:inline">{% csrf_token %}<input type="hidden" name="side" value="buy"><button class="btn" title="Back to pending; re-checked with a fresh price on the next step">Withdraw buy</button></form>{% endif %}
+          {% if lv.sell_status == 'placed' %}<form method="post" action="{% url 'cascades:level' c.pk lv.pk 'cancel' %}" style="display:inline">{% csrf_token %}<input type="hidden" name="side" value="sell"><button class="btn" title="Re-placed fresh at the computed take-profit on the next step">Reset sell</button></form>{% endif %}
+          {% if lv.status == 'pending' or lv.status == 'placed' or lv.sell_status == 'placed' %}
+          <details style="display:inline-block"><summary class="btn">Edit</summary>
+            <form method="post" action="{% url 'cascades:level' c.pk lv.pk 'edit' %}" class="edit">{% csrf_token %}
+              {% if lv.sell_status == 'placed' %}
+                <label>Sell price <input name="sell_target" value="{{ lv.sell_target|floatformat:'-8' }}" inputmode="decimal"></label>
+              {% else %}
+                <label>Buy price <input name="target_price" value="{{ lv.target_price|floatformat:'-8' }}" inputmode="decimal"></label>
+                <label>Amount <input name="amount_usdt" value="{{ lv.amount_usdt|floatformat:'-4' }}" inputmode="decimal"></label>
+                <label>TP % <input name="take_profit_pct" value="{{ lv.take_profit_pct|floatformat:'-4' }}" inputmode="decimal"></label>
+              {% endif %}
+              <button class="btn primary">Save</button>
+            </form></details>
+          {% endif %}
+        {% endif %}</td>
+      </tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">What happened</h3>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>When (UTC)</th><th>Level</th><th>Event</th><th class="num">Price</th><th>Detail</th></tr></thead>
+    <tbody>{% for e in events %}
+      <tr><td class="mono muted">{{ e.at|date:"Y-m-d H:i:s" }}</td><td>{{ e.level|default_if_none:"" }}</td><td>{{ e.kind }}</td>
+        <td class="num mono">{{ e.price|default_if_none:"" }}</td><td style="white-space:normal">{{ e.message }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="muted">Nothing yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+<style>
+  .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin:12px 0; }
+  .stats div { display:flex; flex-direction:column; }
+  .stats small { font-size:11px; }
+  details summary { list-style:none; }
+  form.edit { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  form.edit input { width:110px; }
+</style>
+{% endblock %}

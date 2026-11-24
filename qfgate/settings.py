@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "market",
     "trading",
     "intel",
+    "cascades",
 ]
 
 MIDDLEWARE = [

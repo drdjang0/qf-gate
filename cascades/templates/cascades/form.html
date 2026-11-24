@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == 'backtest' %}Backtest a cascade{% else %}New cascade{% endif %} · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h2 style="margin:0">{% if mode == 'backtest' %}Backtest a cascade{% else %}New dry-run cascade{% endif %}</h2>
+    <a href="{% url 'cascades:index' %}">← Cascades</a>
+  </div>
+  <p class="muted" style="font-size:13px">{% if mode == 'backtest' %}Replays the ladder over this app's stored candles with the same rules as the dry-run engine:
+    one buy resting at a time, skip-ahead, a take-profit sell per level that can only fill from the next bar on. Sync the coin's history first (Coins page).
+    {% else %}Starts at once on Gate.io's live price (level 1 is placed straight away, or after the trigger). Dry-run: nothing is sent to the exchange.{% endif %}</p>
+  <form method="post" class="cascade-form">{% csrf_token %}
+    {% if form.non_field_errors %}<ul class="errorlist">{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    <div class="grid2">
+      <p>{{ form.coin.label_tag }} {{ form.coin }} {{ form.coin.errors }}</p>
+      <p>{{ form.name.label_tag }} {{ form.name }}</p>
+      <p>{{ form.trigger_price.label_tag }} {{ form.trigger_price }} <span class="helptext">{{ form.trigger_price.help_text }}</span>{{ form.trigger_price.errors }}</p>
+      <p>{{ form.fee_pct.label_tag }} {{ form.fee_pct }} <span class="helptext">{{ form.fee_pct.help_text }}</span>{{ form.fee_pct.errors }}</p>
+      {% if mode == 'backtest' %}
+      <p>{{ form.interval.label_tag }} {{ form.interval }} <span class="helptext">{{ form.interval.help_text }}</span></p>
+      <p>{{ form.start.label_tag }} {{ form.start }} {{ form.start.errors }} {{ form.end.label_tag }} {{ form.end }} {{ form.end.errors }}</p>
+      {% endif %}
+    </div>
+    <fieldset class="kind"><legend>How the levels are set</legend>{% for r in form.kind %}<label style="margin-right:16px">{{ r.tag }} {{ r.choice_label }}</label>{% endfor %}</fieldset>
+    <div class="kind-pct grid2">
+      <p>{{ form.base_price.label_tag }} {{ form.base_price }} {{ form.base_price.errors }}</p>
+      <p>{{ form.base_amount.label_tag }} {{ form.base_amount }} {{ form.base_amount.errors }}</p>
+      <p>{{ form.price_step_pct.label_tag }} {{ form.price_step_pct }} <span class="helptext">{{ form.price_step_pct.help_text }}</span>{{ form.price_step_pct.errors }}</p>
+      <p>{{ form.amount_step_pct.label_tag }} {{ form.amount_step_pct }} <span class="helptext">{{ form.amount_step_pct.help_text }}</span>{{ form.amount_step_pct.errors }}</p>
+      <p>{{ form.num_levels.label_tag }} {{ form.num_levels }} {{ form.num_levels.errors }}</p>
+      <p>{{ form.tp_base_pct.label_tag }} {{ form.tp_base_pct }} <span class="helptext">{{ form.tp_base_pct.help_text }}</span>{{ form.tp_base_pct.errors }}</p>
+      <p>{{ form.tp_step_pct.label_tag }} {{ form.tp_step_pct }} <span class="helptext">{{ form.tp_step_pct.help_text }}</span>{{ form.tp_step_pct.errors }}</p>
+    </div>
+    <div class="kind-manual"><p>{{ form.levels_text.label_tag }} {{ form.levels_text }}
+      <span class="helptext">One level per line: buy price, USDT amount, sell price (sell above buy).{% if mode != 'backtest' %} Level 1 is checked against the live price for a misplaced decimal.{% endif %}</span></p></div>
+    <p style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" name="action" value="preview">Preview levels</button>
+      <button class="btn primary" name="action" value="go">{% if mode == 'backtest' %}Run backtest{% else %}Start dry-run cascade{% endif %}</button>
+    </p>
+  </form>
+</div>
+{% if preview %}
+<div class="card">
+  <h3 style="margin-top:0">Preview</h3>
+  <p class="muted">{{ preview.rows|length }} levels, {{ preview.total|floatformat:2 }} USDT if every level buys; the last level is {{ preview.depth_pct|floatformat:2 }}% from level 1.
+    {% if price %}Live price now: <b class="mono">{{ price }}</b>.{% endif %}</p>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>Level</th><th class="num">Buy price</th><th class="num">Amount</th><th class="num">Running total</th><th class="num">Take-profit</th><th class="num">Sell price</th></tr></thead>
+    <tbody>{% for r in preview.rows %}<tr><td>{{ r.index }}</td><td class="num mono">{{ r.target_price|floatformat:"-8" }}</td>
+      <td class="num">{{ r.amount_usdt|floatformat:2 }}</td><td class="num muted">{{ r.cum|floatformat:2 }}</td>
+      <td class="num">+{{ r.take_profit_pct|floatformat:2 }}%</td><td class="num mono">{{ r.sell|floatformat:"-8" }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
+<style>
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:0 16px; }
+  fieldset.kind { border:1px solid var(--line); border-radius:6px; margin:8px 0 12px; }
+</style>
+<script>
+  (function () {
+    const f = document.querySelector(".cascade-form");
+    function sync() {
+      const manual = (f.querySelector("input[name=kind]:checked") || {}).value === "manual";
+      f.querySelector(".kind-pct").style.display = manual ? "none" : "";
+      f.querySelector(".kind-manual").style.display = manual ? "" : "none";
+    }
+    f.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", sync));
+    sync();
+  })();
+</script>
+{% endblock %}

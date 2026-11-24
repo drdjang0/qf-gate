@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Cascade backtest #{{ bt.pk }} · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h2 style="margin:0">Cascade backtest #{{ bt.pk }}{% if bt.name %} <span class="muted">{{ bt.name }}</span>{% endif %}</h2>
+    <a href="{% url 'cascades:index' %}">← Cascades</a>
+    <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+      <a class="btn" href="{% url 'cascades:backtest_create' %}?from_backtest={{ bt.pk }}">Change and re-run</a>
+      <a class="btn primary" href="{% url 'cascades:create' %}?from_backtest={{ bt.pk }}">Start as dry-run cascade</a>
+      <form method="post" action="{% url 'cascades:backtest_delete' bt.pk %}" onsubmit="return confirm('Delete this backtest?')">{% csrf_token %}<button class="btn danger">Delete</button></form>
+    </span>
+  </div>
+  <p class="muted">{{ bt.coin.pair }} · {{ bt.interval }} bars · {{ bt.start|date:"Y-m-d" }} → {{ bt.end|date:"Y-m-d" }} UTC · {{ bt.get_kind_display }}
+    · fee {{ bt.fee_pct }}% · trigger {{ bt.trigger_price|default_if_none:"none" }}{% if bt.bars %} · {{ bt.bars }} bars{% endif %}</p>
+  {% if bt.status == 'failed' %}
+    <p class="err">{{ bt.message }}</p>
+  {% else %}
+    {% if s.outcome == 'never_armed' %}<p class="warn">The price never reached the trigger in this period, so nothing was bought.</p>{% endif %}
+    <div class="stats">
+      <div><span class="muted">Levels bought</span><b>{{ s.fills }}</b><small class="muted">{{ s.skips }} skipped</small></div>
+      <div><span class="muted">Invested</span><b>{{ s.invested|floatformat:2 }}</b></div>
+      <div><span class="muted">Realised</span><b class="{% if s.realized > 0 %}ok{% elif s.realized < 0 %}err{% endif %}">{{ s.realized|floatformat:2 }}</b>
+        <small class="muted">{{ s.sells }} level(s) sold, {{ s.roi_pct|floatformat:2 }}% on invested</small></div>
+      <div><span class="muted">Still open</span><b class="{% if s.unrealized > 0 %}ok{% elif s.unrealized < 0 %}err{% endif %}">{{ s.unrealized|floatformat:2 }}</b>
+        <small class="muted">{{ s.open_qty|floatformat:"-6" }} held, valued at the last close {{ s.end_price|floatformat:"-8" }}</small></div>
+      <div><span class="muted">Total</span><b class="{% if s.roi_total_pct > 0 %}ok{% elif s.roi_total_pct < 0 %}err{% endif %}">{{ s.roi_total_pct|floatformat:2 }}%</b>
+        <small class="muted">realised + open, on invested</small></div>
+      <div><span class="muted">Buy and hold</span><b>{{ s.buy_hold_pct|floatformat:2 }}%</b><small class="muted">first open to last close</small></div>
+    </div>
+    <p class="muted" style="font-size:13px">Rules: one buy rests at a time; a level the market is already below is skipped (except the last); a buy fills at its price on the
+      first bar whose low reaches it; its sell fills on the first <i>later</i> bar whose high reaches the take-profit; after a buy, the next level is
+      chosen with that bar's low. Fees come off what is received on both legs. Fills are at the limit price (a real gap-down fill could be better).</p>
+  {% endif %}
+</div>
+{% if bt.levels %}
+<div class="card">
+  <h3 style="margin-top:0">Levels</h3>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>#</th><th class="num">Buy price</th><th class="num">Amount</th><th class="num">TP</th><th>Buy</th><th>Bought at (UTC)</th>
+      <th class="num">Sell price</th><th>Sold at (UTC)</th><th class="num">P&amp;L</th></tr></thead>
+    <tbody>{% for lv in bt.levels %}
+      <tr><td>{{ lv.index }}</td><td class="num mono">{{ lv.target_price|floatformat:"-8" }}</td><td class="num">{{ lv.amount_usdt|floatformat:2 }}</td>
+        <td class="num">+{{ lv.take_profit_pct|floatformat:2 }}%</td>
+        <td><span class="badge {% if lv.status == 'filled' %}ok{% elif lv.status == 'skipped' %}err{% elif lv.status == 'placed' %}warn{% endif %}">{% if lv.status == 'placed' %}resting at end{% else %}{{ lv.status }}{% endif %}</span>
+          {% if lv.skip_price %}<small class="muted">at {{ lv.skip_price|floatformat:"-8" }}</small>{% endif %}</td>
+        <td class="mono muted">{% if lv.fill_time %}<span class="ts" data-t="{{ lv.fill_time }}"></span>{% endif %}</td>
+        <td class="num mono">{{ lv.sell_price|floatformat:"-8" }}</td>
+        <td class="mono muted">{% if lv.sell_time %}<span class="ts" data-t="{{ lv.sell_time }}"></span>{% elif lv.sell_status == 'placed' %}open at end{% endif %}</td>
+        <td class="num {% if lv.pnl > 0 %}ok{% elif lv.pnl < 0 %}err{% endif %}">{% if lv.pnl is not None %}{{ lv.pnl|floatformat:2 }}{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
+<style>
+  .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin:12px 0; }
+  .stats div { display:flex; flex-direction:column; }
+  .stats small { font-size:11px; }
+</style>
+<script>
+  document.querySelectorAll(".ts").forEach(el => {
+    el.textContent = new Date(Number(el.dataset.t) * 1000).toISOString().slice(0, 16).replace("T", " ");
+  });
+</script>
+{% endblock %}

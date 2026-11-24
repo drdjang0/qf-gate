@@ -189,6 +189,27 @@ connectors and the cloud Managed Agents deployment (our worker already runs brie
 
 ---
 
+## ✅ Phase 8: Cascade orders (from the user's own gate-cascade-bot)
+
+The buy-ladder strategy from the earlier Node.js project, rebuilt in Python as its own **Cascades** section. It
+can't be a normal strategy plug-in: the engine holds one averaged position with one stop / target, while a cascade
+gives every level its own buy and its own take-profit sell.
+
+| # | Item | Status |
+|---|---|---|
+| 8.1 | Level math: % steps (price down, amount up, take-profit ladder) or a manual template (buy, amount, sell per line); skip-ahead with the last-level rule (`cascades/ladder.py`) | ✅ |
+| 8.2 | Backtest on stored candles with the old project's rules: decision prices never from the future, no buy and sell of one level in the same bar, the next level decided on the fill bar's low, fees off what is received | ✅ |
+| 8.3 | Dry-run engine: one buy resting at a time, fills on the live price **and** stored 1-minute candles since the order was placed (wicks between checks count), worker every 30 s + live-stream ticks, compare-and-set so two processes never apply a fill twice, kill switch stops new buys only | ✅ |
+| 8.4 | Pages: list, create with preview, detail with hold / resume / cancel / per-level edit and withdraw, event log, backtest list and report, "start as dry-run" from a backtest | ✅ |
+| 8.5 | Live mode: real Gate.io limit orders (and native trigger orders) behind the same three locks as live bots | ⏳ after a dry-run period |
+
+**Kept from the old project:** at most one buy level rests at a time (the crash-safety rule); a take-profit sell never
+gates the next level; the misplaced-decimal check on level 1 (0.2x to 3x the market). **Changed:** the old dry-run never
+filled; ours fills on real prices. Backtests read our own stored candles instead of fetching from Gate (no 6000-candle cap).
+**Not adopted:** the old multi-user accounts and per-user API keys (QF-gate is single-user) and its TradingView panel.
+
+---
+
 ## Suggested order
 
 1. **Phase 3.5** in order: 3.5.1 → 3.5.2 → 3.5.4, then 3.5.5–3.5.7 (3.5.3 alongside 3.5.2).
@@ -197,3 +218,4 @@ connectors and the cloud Managed Agents deployment (our worker already runs brie
 4. **Phases 5 and 6** in the order listed.
 5. **Phase 7**: 7.1 first (no cost, useful on its own), then 7.2 and 7.3, then 7.4 with 7.5, then 7.6.
    7.7 only if the 7.6 scorecard earns it.
+6. **Phase 8**: 8.5 (live cascades) only after a cascade has run in dry-run for a while and its fills look right.

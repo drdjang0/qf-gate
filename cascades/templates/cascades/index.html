@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Cascades · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <h2 style="margin:0">Cascades</h2>
+    <span class="badge">dry-run</span>
+    <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+      <a class="btn" href="{% url 'cascades:backtest_create' %}">Backtest a cascade</a>
+      <a class="btn primary" href="{% url 'cascades:create' %}">+ New cascade</a>
+    </span>
+  </div>
+  <p class="muted" style="font-size:13px">A buy ladder on one coin. Only <b>one buy level rests at a time</b>: the next level is placed
+    once the previous one has bought, so a fast crash can't spend the whole ladder at once. Every bought level gets its own
+    take-profit sell. Levels the market has already fallen through are skipped (except the last one). Set it up with % steps
+    or type each level by hand. Dry-run: fills are simulated on Gate.io's real prices, no orders are sent.</p>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>#</th><th>Coin</th><th>Kind</th><th>Status</th><th class="num">Invested</th>
+      <th class="num">Realised</th><th class="num">Open P&amp;L</th><th class="num">Last price</th><th>Started</th></tr></thead>
+    <tbody>{% for c in cascades %}
+      <tr><td><a href="{% url 'cascades:detail' c.pk %}">#{{ c.pk }}</a> {% if c.name %}<span class="muted">{{ c.name }}</span>{% endif %}</td>
+        <td>{{ c.coin.pair }}</td><td class="muted">{{ c.get_kind_display }}</td>
+        <td><span class="badge {% if c.status == 'active' %}ok{% elif c.status == 'pending_trigger' or c.status == 'held' %}warn{% elif c.status == 'cancelled' %}err{% endif %}">{{ c.get_status_display }}</span>
+          {% if c.last_error %}<span class="err" title="{{ c.last_error }}">!</span>{% endif %}</td>
+        <td class="num">{{ c.t.invested|floatformat:2 }}</td>
+        <td class="num {% if c.t.realized > 0 %}ok{% elif c.t.realized < 0 %}err{% endif %}">{{ c.t.realized|floatformat:2 }}</td>
+        <td class="num {% if c.t.unrealized > 0 %}ok{% elif c.t.unrealized < 0 %}err{% endif %}">{{ c.t.unrealized|floatformat:2 }}</td>
+        <td class="num mono">{{ c.last_price|default_if_none:"-" }}</td>
+        <td class="muted">{{ c.created_at|date:"Y-m-d H:i" }}</td></tr>
+    {% empty %}<tr><td colspan="9" class="muted">No cascades yet. Try one in a backtest first, then start it as a dry-run.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Cascade backtests</h3>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>#</th><th>Coin</th><th>Bars</th><th>Period (UTC)</th><th class="num">Bought</th><th class="num">Realised</th>
+      <th class="num">ROI (sold)</th><th>Outcome</th></tr></thead>
+    <tbody>{% for b in backtests %}
+      <tr><td><a href="{% url 'cascades:backtest_detail' b.pk %}">#{{ b.pk }}</a> {% if b.name %}<span class="muted">{{ b.name }}</span>{% endif %}</td>
+        <td>{{ b.coin.pair }}</td><td>{{ b.interval }}</td>
+        <td class="mono">{{ b.start|date:"Y-m-d" }} → {{ b.end|date:"Y-m-d" }}</td>
+        <td class="num">{{ b.fills }}</td>
+        <td class="num {% if b.realized > 0 %}ok{% elif b.realized < 0 %}err{% endif %}">{% if b.realized is not None %}{{ b.realized|floatformat:2 }}{% else %}-{% endif %}</td>
+        <td class="num">{% if b.roi_pct is not None %}{{ b.roi_pct|floatformat:2 }}%{% else %}-{% endif %}</td>
+        <td>{% if b.status == 'failed' %}<span class="badge err">failed</span>{% else %}<span class="muted">{{ b.summary.outcome }}</span>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="8" class="muted">No backtests yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}
