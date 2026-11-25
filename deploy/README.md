@@ -8,6 +8,7 @@ web       gunicorn  -> 127.0.0.1:8000  (Caddy in front, HTTPS)
 worker    manage.py run_worker      (jobs, schedule, bot safety-net steps, alerts)
 stream    manage.py stream_candles  (live 1m candles, bot stops between bars)
 telegram  manage.py telegram_bot    (optional: Telegram commands)
+account   manage.py stream_account  (fill listener: Gate.io order fills / trades for every user's key)
 ```
 
 ## 1. Server basics
@@ -70,6 +71,7 @@ sudo cp deploy/systemd/qfgate-*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now qfgate-web qfgate-worker qfgate-stream
 sudo systemctl enable --now qfgate-telegram     # only after TELEGRAM_* are set in .env
+sudo systemctl enable --now qfgate-account      # fill listener (live cascades / bots, portfolio); needs FIELD_ENCRYPTION_KEY
 systemctl status 'qfgate-*'
 journalctl -u qfgate-stream -f                  # live logs
 ```

@@ -201,12 +201,30 @@ gives every level its own buy and its own take-profit sell.
 | 8.2 | Backtest on stored candles with the old project's rules: decision prices never from the future, no buy and sell of one level in the same bar, the next level decided on the fill bar's low, fees off what is received | ✅ |
 | 8.3 | Dry-run engine: one buy resting at a time, fills on the live price **and** stored 1-minute candles since the order was placed (wicks between checks count), worker every 30 s + live-stream ticks, compare-and-set so two processes never apply a fill twice, kill switch stops new buys only | ✅ |
 | 8.4 | Pages: list, create with preview, detail with hold / resume / cancel / per-level edit and withdraw, event log, backtest list and report, "start as dry-run" from a backtest | ✅ |
-| 8.5 | Live mode: real Gate.io limit orders (and native trigger orders) behind the same three locks as live bots | ⏳ after a dry-run period |
+| 8.5 | Live mode: real Gate.io limit orders behind the same three locks as live bots | ✅ built in 10.6 |
 
 **Kept from the old project:** at most one buy level rests at a time (the crash-safety rule); a take-profit sell never
 gates the next level; the misplaced-decimal check on level 1 (0.2x to 3x the market). **Changed:** the old dry-run never
 filled; ours fills on real prices. Backtests read our own stored candles instead of fetching from Gate (no 6000-candle cap).
 **Not adopted:** the old multi-user accounts and per-user API keys (QF-gate is single-user) and its TradingView panel.
+
+---
+
+## ✅ Phase 10: Multi-user, your own keys, live trading you control (10.7: a first tiny live test is still yours to do)
+
+Each person has an account with their own Gate.io key, bots, cascades, settings and ledger. Market data (coins,
+candles, levels, news, AI briefs) is shared. Everything defaults to dry-run; going live is each user's own switch,
+inside a server-wide permission the operator controls.
+
+| # | Item | Status |
+|---|---|---|
+| 10.1 | Multi-user: every strategy, bot, paper session, cascade, backtest, control and ledger account belongs to a user; pages show only your own; existing data goes to the first admin; a Users page for the admin (create / disable people) | ✅ |
+| 10.2 | Your API keys on a page: add, test, replace, remove a Gate.io key; stored encrypted (Fernet, `FIELD_ENCRYPTION_KEY` in the server environment), never shown again after saving (only the last 4 characters); used for live orders, the fill listener and the ledger import | ✅ |
+| 10.3 | Trading settings per user: dry-run or live (typed confirmation), strategy checks before live on / off, use the platform without strategies (Strategies / Bots hidden; cascades, portfolio stay), daily-loss limit and the other limits optional (empty = off) | ✅ |
+| 10.4 | Live order correctness: buy fee taken in the coin (sell the net amount), Gate's minimum order size checked first, recovery of an order interrupted by a crash (looked up on Gate by its client id), stop-loss also placed on Gate as a price-trigger order | ✅ |
+| 10.5 | Fill listener: Gate.io's private WebSocket (`spot.orders`, `spot.usertrades`) per key, the moment an order fills: bots, cascades and the ledger are updated; reconnects by itself; REST polling stays as a safety net. (Gate.io has no HTTP webhook for fills; this is its push channel.) | ✅ |
+| 10.6 | Live cascades (was 8.5): real limit buys and take-profit sells on Gate.io, filled through the listener, hold / resume / cancel / edit cancel and replace the real orders, every fill in the ledger | ✅ |
+| 10.7 | First real-money test with the smallest amount (about 5 USDT): one live cascade level buy + take-profit, one live bot round trip; check the fills, fees and the exchange stop against Gate.io and the Portfolio | ⏳ your step |
 
 ---
 

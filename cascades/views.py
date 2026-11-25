@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404, redirect, render  # noqa: F401
+
+from accounts.access import get_owned, owned
 from django.views.decorators.http import require_POST
 
 from . import backtest as bt_run
@@ -17,9 +19,9 @@ def _initial(request) -> dict:
     init: dict = {}
     src = None
     if request.GET.get("from_backtest"):
-        src = CascadeBacktest.objects.filter(pk=request.GET["from_backtest"]).first()
+        src = owned(CascadeBacktest.objects.all(), request.user).filter(pk=request.GET["from_backtest"]).first()
     elif request.GET.get("from_cascade"):
-        src = Cascade.objects.filter(pk=request.GET["from_cascade"]).first()
+        src = owned(Cascade.objects.all(), request.user).filter(pk=request.GET["from_cascade"]).first()
     if src is not None:
         init.update(src.config or {}, coin=src.coin_id, kind=src.kind, trigger_price=src.trigger_price,
                     fee_pct=src.fee_pct, name=src.name)
@@ -41,11 +43,11 @@ def _preview(levels: list[dict]) -> dict:
 
 @login_required
 def index(request):
-    cascades = list(Cascade.objects.select_related("coin").prefetch_related("levels")[:100])
+    cascades = list(owned(Cascade.objects.select_related("coin").prefetch_related("levels"), request.user)[:100])
     for c in cascades:
         c.t = c.totals()
     return render(request, "cascades/index.html", {
-        "cascades": cascades, "backtests": CascadeBacktest.objects.select_related("coin")[:50],
+        "cascades": cascades, "backtests": owned(CascadeBacktest.objects.select_related("coin"), request.user)[:50],
     })
 
 
@@ -62,21 +64,23 @@ def create(request):
             try:
                 c = engine.create(coin, form.cleaned_data["kind"], form.levels(),
                                   trigger_price=form.cleaned_data.get("trigger_price"), fee_pct=form.cleaned_data["fee_pct"],
-                                  config=form.config(), name=form.cleaned_data.get("name") or "", price=price)
+                                  config=form.config(), name=form.cleaned_data.get("name") or "", price=price,
+                                  owner=request.user, mode=form.cleaned_data.get("mode") or "dry_run")
             except ValueError as exc:
                 form.add_error(None, str(exc))
                 preview = _preview(form.levels())
             else:
                 if price is None:
                     messages.warning(request, "No live price from Gate.io right now: level 1 is placed on the next step.")
-                messages.success(request, f"Dry-run cascade #{c.pk} started.")
+                messages.success(request, f"{'LIVE' if c.mode == 'live' else 'Dry-run'} cascade #{c.pk} started."
+                                 + (" Its orders are real limit orders on Gate.io." if c.mode == "live" else ""))
                 return redirect("cascades:detail", pk=c.pk)
     return render(request, "cascades/form.html", {"form": form, "preview": preview, "price": price, "mode": "create"})
 
 
 @login_required
 def detail(request, pk: int):
-    c = get_object_or_404(Cascade.objects.select_related("coin"), pk=pk)
+    c = get_owned(Cascade.objects.select_related("coin"), request.user, pk=pk)
     levels = list(c.levels.all())
     for lv in levels:
         lv.sell_preview = lv.sell_target or lv.target_price * (1 + lv.take_profit_pct / 100)
@@ -88,7 +92,7 @@ def detail(request, pk: int):
 @login_required
 @require_POST
 def action(request, pk: int, what: str):
-    c = get_object_or_404(Cascade.objects.select_related("coin"), pk=pk)
+    c = get_owned(Cascade.objects.select_related("coin"), request.user, pk=pk)
     try:
         if what == "hold":
             engine.hold(c)
@@ -130,7 +134,7 @@ def _num(request, name: str) -> float | None:
 @login_required
 @require_POST
 def level(request, pk: int, level_pk: int, what: str):
-    lv = get_object_or_404(CascadeLevel.objects.select_related("cascade__coin"), pk=level_pk, cascade_id=pk)
+    lv = get_owned(CascadeLevel.objects.select_related("cascade__coin"), request.user, pk=level_pk, cascade_id=pk)
     try:
         if not lv.cascade.is_running and lv.cascade.status != Cascade.Status.HELD:
             raise ValueError("This cascade has finished")
@@ -160,20 +164,20 @@ def backtest_create(request):
             bt = bt_run.run(form.cleaned_data["coin"], form.cleaned_data["kind"], form.levels(),
                             interval=form.cleaned_data["interval"], start=start, end=end,
                             trigger_price=form.cleaned_data.get("trigger_price"), fee_pct=form.cleaned_data["fee_pct"],
-                            config=form.config(), name=form.cleaned_data.get("name") or "")
+                            config=form.config(), name=form.cleaned_data.get("name") or "", owner=request.user)
             return redirect("cascades:backtest_detail", pk=bt.pk)
     return render(request, "cascades/form.html", {"form": form, "preview": preview, "mode": "backtest"})
 
 
 @login_required
 def backtest_detail(request, pk: int):
-    bt = get_object_or_404(CascadeBacktest.objects.select_related("coin"), pk=pk)
+    bt = get_owned(CascadeBacktest.objects.select_related("coin"), request.user, pk=pk)
     return render(request, "cascades/backtest_detail.html", {"bt": bt, "s": bt.summary or {}})
 
 
 @login_required
 @require_POST
 def backtest_delete(request, pk: int):
-    get_object_or_404(CascadeBacktest, pk=pk).delete()
+    get_owned(CascadeBacktest, request.user, pk=pk).delete()
     messages.success(request, f"Cascade backtest #{pk} deleted.")
     return redirect("cascades:index")

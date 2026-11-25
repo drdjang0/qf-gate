@@ -243,23 +243,23 @@ class ControlViewTests(TestCase):
         self.user = User.objects.create_user("me", password="not-a-real-pass-123")
         self.client.force_login(self.user)
         coin = Coin.objects.create(symbol="BTC", chain="BTC", gate_currency="BTC", verified_at=dj_tz.now())
-        self.cfg = StrategyConfig.objects.create(name="z", strategy_key="zone_hotspot", coin=coin, interval="1h",
-                                                 params=PARAMS, risk={})
+        self.cfg = StrategyConfig.objects.create(owner=self.user, name="z", strategy_key="zone_hotspot", coin=coin,
+                                                 interval="1h", params=PARAMS, risk={})
 
     def test_pages_and_actions(self):
         self.assertContains(self.client.get(reverse("trading:control")), "Kill switch")
         self.client.post(reverse("trading:control"), {"action": "halt", "reason": "lunch"})
-        self.assertTrue(TradingControl.get().halted)
+        self.assertTrue(TradingControl.for_user(self.user).halted)
         self.client.post(reverse("trading:control"), {"action": "resume"})
-        self.assertFalse(TradingControl.get().halted)
+        self.assertFalse(TradingControl.for_user(self.user).halted)
         r = self.client.post(reverse("trading:control"), {"action": "kill", "confirm": "nope"}, follow=True)
         self.assertContains(r, "Type KILL")
         self.client.post(reverse("trading:control"), {"action": "live", "enable": "1", "confirm": "LIVE"})
-        self.assertTrue(TradingControl.get().live_enabled)
+        self.assertTrue(TradingControl.for_user(self.user).live_enabled)
         self.client.post(reverse("trading:control"), {"action": "limits", "max_daily_loss_pct": "1.5",
                                                       "max_exposure": "500", "max_orders_per_hour": "5",
                                                       "min_dry_run_days": "3"})
-        c = TradingControl.get()
+        c = TradingControl.for_user(self.user)
         self.assertEqual((c.max_daily_loss_pct, c.max_exposure, c.max_orders_per_hour, c.min_dry_run_days),
                          (1.5, 500, 5, 3))
 

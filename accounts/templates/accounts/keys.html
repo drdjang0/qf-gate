@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}API keys · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">Your account: {{ user.username }}</h2>
+  {% include "accounts/_tabs.html" with tab="keys" %}
+  {% if not crypto_ready %}
+    <p class="err"><b>Keys can't be saved yet:</b> the server has no FIELD_ENCRYPTION_KEY. The operator runs
+      <code>python manage.py make_encryption_key</code>, puts the result in <code>.env</code> and restarts QF-gate.</p>
+  {% endif %}
+
+  <h3>Your Gate.io key</h3>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>Key</th><th>Label</th><th>Status</th><th>Can read</th><th>Added</th><th></th></tr></thead>
+    <tbody>{% for k in keys %}
+      <tr><td class="mono">…{{ k.key_last4 }}</td><td>{{ k.label }}</td>
+        <td>{% if k.is_active %}<span class="badge ok">in use</span>{% else %}<span class="badge">replaced</span>{% endif %}
+          {% if k.last_error %}<div class="err" style="font-size:12px">{{ k.last_error }}</div>{% endif %}</td>
+        <td style="font-size:12.5px">Spot {% if k.permissions.spot_read %}✓{% else %}✗{% endif %} · Wallet {% if k.permissions.wallet_read %}✓{% else %}✗{% endif %}
+          {% if k.verified_at %}<div class="muted">tested {{ k.verified_at|date:"Y-m-d H:i" }}</div>{% endif %}</td>
+        <td class="muted">{{ k.created_at|date:"Y-m-d" }}</td>
+        <td style="white-space:nowrap">
+          {% if k.is_active %}<form method="post" action="{% url 'accounts:key_action' k.pk 'test' %}" style="display:inline">{% csrf_token %}<button class="btn">Test</button></form>{% endif %}
+          <form method="post" action="{% url 'accounts:key_action' k.pk 'delete' %}" style="display:inline" onsubmit="return confirm('Remove this key from QF-gate?')">{% csrf_token %}<button class="btn danger">Remove</button></form></td></tr>
+    {% empty %}<tr><td colspan="6" class="muted">No key yet. Everything runs in dry-run until you add one and allow live trading.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">{% if keys %}Replace the key{% else %}Add your Gate.io key{% endif %}</h3>
+  <form method="post" class="stack" autocomplete="off">{% csrf_token %}
+    {{ form.non_field_errors }}
+    <label>{{ form.label.label }} {{ form.label }}</label>
+    <label>{{ form.api_key.label }} {{ form.api_key }}{{ form.api_key.errors }}</label>
+    <label>{{ form.api_secret.label }} {{ form.api_secret }}{{ form.api_secret.errors }}</label>
+    <label class="check">{{ form.test }} {{ form.test.label }}</label>
+    <button class="btn primary" {% if not crypto_ready %}disabled{% endif %}>Save key</button>
+  </form>
+  <ul style="font-size:13.5px;margin-top:14px">
+    <li>On Gate.io: <i>API Management</i> → new <b>API v4</b> key. Permissions: <b>Spot trade</b> (for live bots and cascades) and
+      <b>Wallet read</b> (for the portfolio import). <b>Never</b> give withdrawal permission. Bind it to your server's IP address.</li>
+    <li>The secret is encrypted before it is stored and is never shown again, not even to admins; only the last 4 characters of the key are displayed.</li>
+    <li>Saving a new key replaces the old one. Removing it switches live trading off.</li>
+  </ul>
+</div>
+{% endblock %}

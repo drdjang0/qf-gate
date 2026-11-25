@@ -19,6 +19,7 @@ class Cascade(models.Model):
 
     class Mode(models.TextChoices):
         DRY_RUN = "dry_run", "Dry-run (simulated fills on real prices)"
+        LIVE = "live", "Live (real limit orders on Gate.io)"
 
     class Status(models.TextChoices):
         PENDING_TRIGGER = "pending_trigger", "Waiting for trigger"
@@ -27,6 +28,7 @@ class Cascade(models.Model):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
+    owner = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.CASCADE, related_name="cascades")
     name = models.CharField(max_length=100, blank=True)
     coin = models.ForeignKey(Coin, on_delete=models.CASCADE, related_name="cascades")
     kind = models.CharField(max_length=8, choices=Kind.choices, default=Kind.PERCENT)
@@ -107,6 +109,14 @@ class CascadeLevel(models.Model):
     sell_filled_at = models.DateTimeField(null=True, blank=True)
     sell_fee = models.FloatField(default=0.0)
     pnl = models.FloatField(null=True, blank=True, help_text="Realised profit of this level's round trip")
+    # live cascades: the real orders on Gate.io (client id first, so a crash between sending and saving is recoverable)
+    buy_client_id = models.CharField(max_length=32, blank=True)
+    buy_order_id = models.CharField(max_length=32, blank=True, db_index=True)
+    buy_order_price = models.FloatField(null=True, blank=True, help_text="Price the live buy order was sent at")
+    sell_client_id = models.CharField(max_length=32, blank=True)
+    sell_order_id = models.CharField(max_length=32, blank=True, db_index=True)
+    sell_order_price = models.FloatField(null=True, blank=True)
+    order_error = models.CharField(max_length=255, blank=True)
 
     class Meta:
         ordering = ["cascade", "index"]
@@ -141,6 +151,7 @@ class CascadeBacktest(models.Model):
         DONE = "done", "Done"
         FAILED = "failed", "Failed"
 
+    owner = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.CASCADE, related_name="cascade_backtests")
     coin = models.ForeignKey(Coin, on_delete=models.CASCADE, related_name="cascade_backtests")
     name = models.CharField(max_length=100, blank=True)
     kind = models.CharField(max_length=8, choices=Cascade.Kind.choices, default=Cascade.Kind.PERCENT)

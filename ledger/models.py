@@ -25,7 +25,8 @@ class Account(models.Model):
         NONE = "none", "None (QF-gate records it, or you enter it)"
         GATE = "gate", "Gate.io API (read-only key)"
 
-    name = models.CharField(max_length=60, unique=True)
+    owner = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.CASCADE, related_name="ledger_accounts")
+    name = models.CharField(max_length=60)
     kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.REAL)
     exchange = models.CharField(max_length=30, default="Gate.io", blank=True)
     sync = models.CharField(max_length=8, choices=Sync.choices, default=Sync.NONE)
@@ -36,6 +37,7 @@ class Account(models.Model):
 
     class Meta:
         ordering = ["kind", "id"]
+        constraints = [models.UniqueConstraint(fields=["owner", "name"], name="ledger_account_name_per_owner")]
 
     def __str__(self) -> str:
         return self.name

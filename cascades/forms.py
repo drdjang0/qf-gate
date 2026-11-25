@@ -36,6 +36,11 @@ class CascadeForm(forms.Form):
     levels_text = forms.CharField(required=False, label="Levels", widget=forms.Textarea(attrs={
         "rows": 6, "placeholder": "one level per line: buy price, USDT amount, sell price\n0.0722, 10, 0.0758\n0.0710, 12, 0.0752"}))
 
+    mode = forms.ChoiceField(choices=Cascade.Mode.choices, initial=Cascade.Mode.DRY_RUN, required=False,
+                             widget=forms.RadioSelect, label="Orders")
+    live_confirm = forms.CharField(required=False, max_length=8, label="Type LIVE to send real orders",
+                                   widget=forms.TextInput(attrs={"autocomplete": "off", "placeholder": "LIVE"}))
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["coin"].queryset = Coin.objects.order_by("symbol")
@@ -45,6 +50,10 @@ class CascadeForm(forms.Form):
         data = super().clean()
         if self.errors:
             return data
+        data["mode"] = data.get("mode") or Cascade.Mode.DRY_RUN
+        if data["mode"] == Cascade.Mode.LIVE and (data.get("live_confirm") or "").strip() != "LIVE" \
+                and self.data.get("action") == "go":
+            raise forms.ValidationError("A live cascade places real orders with your money: type LIVE to confirm.")
         try:
             if data.get("kind") == Cascade.Kind.MANUAL:
                 self._levels = ladder.normalize_manual(ladder.parse_manual_text(data.get("levels_text", "")))
@@ -81,6 +90,8 @@ class CascadeBacktestForm(CascadeForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields.pop("mode", None)  # a backtest never sends orders
+        self.fields.pop("live_confirm", None)
         today = datetime.now(timezone.utc).date()
         self.fields["start"].initial = today - timedelta(days=30)
         self.fields["end"].initial = today

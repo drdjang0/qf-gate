@@ -225,8 +225,15 @@ class GateClient(ExchangeClient):
         data = self._get(f"/spot/currency_pairs/{pair.upper()}")
         if not data:
             return None
+        def num(key):
+            v = data.get(key)
+            return float(v) if v not in (None, "") else None
+
         return {"price_precision": int(data.get("precision") or 0),
-                "amount_precision": int(data.get("amount_precision") or 0)}
+                "amount_precision": int(data.get("amount_precision") or 0),
+                # Gate: "null means no limit"
+                "min_base_amount": num("min_base_amount"), "min_quote_amount": num("min_quote_amount"),
+                "trade_status": data.get("trade_status") or ""}
 
 
 _default_client: GateClient | None = None

@@ -257,7 +257,7 @@ class PageTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_superuser("u", "u@example.com", "pw")
         self.client.force_login(self.user)
-        self.acc = recorder.account(recorder.GATE)
+        self.acc = recorder.account(recorder.GATE, self.user)
         for i, (side, q, p) in enumerate([("buy", "1", "100"), ("buy", "1", "200"), ("sell", "1", "300")]):
             Transaction.objects.create(account=self.acc, base="ETH", side=side, qty=D(q), price=D(p), fee=D(0),
                                        executed_at=T0 + timedelta(days=i), source_key=f"t{i}", route="gate")

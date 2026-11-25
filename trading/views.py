@@ -6,7 +6,9 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404, redirect, render  # noqa: F401
+
+from accounts.access import get_owned, owned
 from django.urls import reverse
 from django.utils import timezone as dj_tz
 from django.views.decorators.http import require_POST
@@ -35,7 +37,7 @@ def _trades_json(qs) -> list[dict]:
 
 @login_required
 def strategy_list(request):
-    configs = StrategyConfig.objects.select_related("coin").prefetch_related("backtests", "paper_sessions")
+    configs = owned(StrategyConfig.objects.select_related("coin").prefetch_related("backtests", "paper_sessions"), request.user)
     rows = []
     for c in configs:
         last = next((b for b in c.backtests.all() if b.status == BacktestRun.Status.DONE), None)
@@ -53,6 +55,8 @@ def strategy_create(request):
     form = StrategyConfigForm(request.POST or None, strategy_key=key)
     if request.method == "POST" and form.is_valid():
         cfg = form.save()
+        cfg.owner = request.user
+        cfg.save(update_fields=["owner"])
         messages.success(request, f"Created {cfg.name}. Run a backtest to see how it would have done.")
         return redirect("trading:strategy_detail", pk=cfg.pk)
     return render(request, "trading/strategy_form.html", {"form": form, "strategy": REGISTRY[key]})
@@ -60,7 +64,7 @@ def strategy_create(request):
 
 @login_required
 def strategy_edit(request, pk: int):
-    cfg = get_object_or_404(StrategyConfig, pk=pk)
+    cfg = get_owned(StrategyConfig, request.user, pk=pk)
     form = StrategyConfigForm(request.POST or None, instance=cfg, strategy_key=cfg.strategy_key)
     if request.method == "POST" and form.is_valid():
         form.save()
@@ -73,7 +77,7 @@ def strategy_edit(request, pk: int):
 @login_required
 @require_POST
 def strategy_delete(request, pk: int):
-    cfg = get_object_or_404(StrategyConfig, pk=pk)
+    cfg = get_owned(StrategyConfig, request.user, pk=pk)
     name = cfg.name
     cfg.delete()
     messages.success(request, f"Deleted {name} with its backtests and paper sessions.")
@@ -82,7 +86,7 @@ def strategy_delete(request, pk: int):
 
 @login_required
 def strategy_detail(request, pk: int):
-    cfg = get_object_or_404(StrategyConfig.objects.select_related("coin"), pk=pk)
+    cfg = get_owned(StrategyConfig.objects.select_related("coin"), request.user, pk=pk)
     return render(request, "trading/strategy_detail.html", {
         "config": cfg,
         "strategy": cfg.strategy_class,
@@ -105,7 +109,7 @@ def strategy_detail(request, pk: int):
 @require_POST
 def strategy_check(request, pk: int):
     """Look-ahead and warm-up checks on the last 30 days of stored data (runs in the request: a few seconds)."""
-    cfg = get_object_or_404(StrategyConfig.objects.select_related("coin"), pk=pk)
+    cfg = get_owned(StrategyConfig.objects.select_related("coin"), request.user, pk=pk)
     try:
         result = checks.run_checks(cfg)
     except Exception as exc:  # noqa: BLE001 - shown to the user
@@ -123,7 +127,7 @@ def strategy_check(request, pk: int):
 @login_required
 @require_POST
 def backtest_create(request, pk: int):
-    cfg = get_object_or_404(StrategyConfig.objects.select_related("coin"), pk=pk)
+    cfg = get_owned(StrategyConfig.objects.select_related("coin"), request.user, pk=pk)
     form = BacktestForm(request.POST)
     if not form.is_valid():
         messages.error(request, "; ".join(e for errs in form.errors.values() for e in errs))
@@ -148,7 +152,7 @@ def backtest_create(request, pk: int):
 
 @login_required
 def backtest_detail(request, pk: int):
-    run = get_object_or_404(BacktestRun.objects.select_related("config__coin"), pk=pk)
+    run = get_owned(BacktestRun.objects.select_related("config__coin"), request.user, pk=pk)
     trades = list(run.trades.all())
     starting = run.risk.get("starting_cash", RISK_PARAMS["starting_cash"].default)
     return render(request, "trading/backtest_detail.html", {
@@ -164,7 +168,7 @@ def backtest_detail(request, pk: int):
 
 @login_required
 def sweep_create(request, pk: int):
-    cfg = get_object_or_404(StrategyConfig.objects.select_related("coin"), pk=pk)
+    cfg = get_owned(StrategyConfig.objects.select_related("coin"), request.user, pk=pk)
     form = SweepForm(request.POST or None, config=cfg)
     if request.method == "POST" and form.is_valid():
         d = form.cleaned_data
@@ -194,7 +198,7 @@ def _fmt_combo(combo: dict) -> list[tuple[str, object]]:
 
 @login_required
 def sweep_detail(request, pk: int):
-    sw = get_object_or_404(Sweep.objects.select_related("config__coin"), pk=pk)
+    sw = get_owned(Sweep.objects.select_related("config__coin"), request.user, pk=pk)
     varied = sweep_mod.varied_keys(sw.grid)
     rows = []
     for i, r in enumerate(sw.results[:100]):
@@ -227,7 +231,7 @@ def sweep_detail(request, pk: int):
 @require_POST
 def sweep_apply(request, pk: int, index: int):
     """Save a sweep row as a NEW strategy (the original stays untouched)."""
-    sw = get_object_or_404(Sweep.objects.select_related("config"), pk=pk)
+    sw = get_owned(Sweep.objects.select_related("config"), request.user, pk=pk)
     try:
         row = sw.results[index]
     except IndexError:
@@ -235,7 +239,7 @@ def sweep_apply(request, pk: int, index: int):
         return redirect("trading:sweep_detail", pk=pk)
     params, risk = sweep_mod.split_combo(row["combo"], sw.base_params, sw.base_risk)
     cfg = StrategyConfig.objects.create(
-        name=f"{sw.config.name} · sweep #{sw.pk} rank {index + 1}"[:100],
+        owner=sw.config.owner, name=f"{sw.config.name} · sweep #{sw.pk} rank {index + 1}"[:100],
         strategy_key=sw.strategy_key, coin=sw.config.coin, interval=sw.interval, params=params, risk=risk,
         notes=f"Created from sweep #{sw.pk}, rank {index + 1}: " + ", ".join(f"{k}={v}" for k, v in _fmt_combo(row["combo"])),
     )
@@ -247,7 +251,7 @@ def sweep_apply(request, pk: int, index: int):
 @login_required
 @require_POST
 def paper_start(request, pk: int):
-    cfg = get_object_or_404(StrategyConfig.objects.select_related("coin"), pk=pk)
+    cfg = get_owned(StrategyConfig.objects.select_related("coin"), request.user, pk=pk)
     if not cfg.coin.verified_at or not cfg.coin.is_active:
         messages.error(request, "The coin must be active and verified.")
         return redirect("trading:strategy_detail", pk=pk)
@@ -267,7 +271,7 @@ def paper_start(request, pk: int):
 @login_required
 @require_POST
 def paper_stop(request, pk: int):
-    s = get_object_or_404(PaperSession, pk=pk)
+    s = get_owned(PaperSession, request.user, pk=pk)
     paper.stop_session(s)
     messages.success(request, "Paper session stopped. An open simulated position stays as it was.")
     return redirect("trading:paper_detail", pk=pk)
@@ -275,7 +279,7 @@ def paper_stop(request, pk: int):
 
 @login_required
 def paper_detail(request, pk: int):
-    s = get_object_or_404(PaperSession.objects.select_related("config__coin"), pk=pk)
+    s = get_owned(PaperSession.objects.select_related("config__coin"), request.user, pk=pk)
     trades = list(s.trades.all())
     st = s.state or {}
     starting = s.risk.get("starting_cash", RISK_PARAMS["starting_cash"].default)
@@ -306,7 +310,7 @@ def backtest_signals_csv(request, pk: int):
     import csv
     import io
 
-    run = get_object_or_404(BacktestRun, pk=pk)
+    run = get_owned(BacktestRun, request.user, pk=pk)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["time_utc", "action", "status", "reason", "tag", "stop", "target"])
@@ -326,7 +330,7 @@ def _xlsx(data: bytes, name: str) -> HttpResponse:
 
 @login_required
 def backtest_export(request, pk: int):
-    run = get_object_or_404(BacktestRun.objects.select_related("config__coin"), pk=pk)
+    run = get_owned(BacktestRun.objects.select_related("config__coin"), request.user, pk=pk)
     starting = run.risk.get("starting_cash", RISK_PARAMS["starting_cash"].default)
     title = f"Backtest #{run.pk} {run.config.name} {run.interval} {run.start:%Y-%m-%d} to {run.end:%Y-%m-%d}"
     return _xlsx(report.workbook(title, list(run.trades.all()), starting, run.metrics), f"backtest-{run.pk}.xlsx")
@@ -334,7 +338,7 @@ def backtest_export(request, pk: int):
 
 @login_required
 def paper_export(request, pk: int):
-    s = get_object_or_404(PaperSession.objects.select_related("config__coin"), pk=pk)
+    s = get_owned(PaperSession.objects.select_related("config__coin"), request.user, pk=pk)
     starting = s.risk.get("starting_cash", RISK_PARAMS["starting_cash"].default)
     title = f"Paper session #{s.pk} {s.config.name} {s.interval} since {s.started_at:%Y-%m-%d}"
     return _xlsx(report.workbook(title, list(s.trades.all()), starting), f"paper-{s.pk}.xlsx")
@@ -351,7 +355,7 @@ from .models import Bot, BotOrder, TradingControl  # noqa: E402
 @login_required
 @require_POST
 def bot_start(request, pk: int):
-    cfg = get_object_or_404(StrategyConfig.objects.select_related("coin"), pk=pk)
+    cfg = get_owned(StrategyConfig.objects.select_related("coin"), request.user, pk=pk)
     mode = request.POST.get("mode", Bot.Mode.DRY_RUN)
     if mode not in Bot.Mode.values:
         mode = Bot.Mode.DRY_RUN
@@ -369,7 +373,7 @@ def bot_start(request, pk: int):
 
 @login_required
 def bot_detail(request, pk: int):
-    bot = get_object_or_404(Bot.objects.select_related("config__coin"), pk=pk)
+    bot = get_owned(Bot.objects.select_related("config__coin"), request.user, pk=pk)
     st = bot.state or {}
     risk = {**{k: p.default for k, p in RISK_PARAMS.items()}, **bot.risk}
     starting = risk["starting_cash"]
@@ -396,7 +400,7 @@ def bot_detail(request, pk: int):
         "fees": sum(o.fee for o in filled),
         "model_pnl": sum(t.pnl for t in model), "model_trades": len(model),
         "unreal": (last - pos["avg"]) * pos["qty"] if pos and last else None,
-        "pending": eng.get("pending"), "control": TradingControl.get(),
+        "pending": eng.get("pending"), "control": TradingControl.for_user(request.user),
         "ai_filter": _ai_filter(bot.risk, bot.mode),
     })
 
@@ -404,7 +408,7 @@ def bot_detail(request, pk: int):
 @login_required
 @require_POST
 def bot_stop(request, pk: int):
-    bot = get_object_or_404(Bot.objects.select_related("config"), pk=pk)
+    bot = get_owned(Bot.objects.select_related("config"), request.user, pk=pk)
     bots_mod.stop_bot(bot, note="stopped from the web page")
     still = Bot.objects.get(pk=pk).pos
     messages.info(request, f"Bot #{bot.pk} stopped." + (" Its position is still open." if still else ""))
@@ -414,7 +418,7 @@ def bot_stop(request, pk: int):
 @login_required
 @require_POST
 def bot_force_exit(request, pk: int):
-    bot = get_object_or_404(Bot, pk=pk)
+    bot = get_owned(Bot, request.user, pk=pk)
     o = bots_mod.force_exit(bot, by="web")
     if o and o.status == BotOrder.Status.FILLED:
         messages.success(request, f"Sold {o.filled_qty:.6g} at {o.avg_price:,.6g} (P&L {o.pnl:+,.2f}).")
@@ -425,26 +429,27 @@ def bot_force_exit(request, pk: int):
 
 @login_required
 def control(request):
-    c = TradingControl.get()
+    me = request.user
+    c = TradingControl.for_user(me)
     if request.method == "POST":
         action = request.POST.get("action")
         if action == "halt":
-            bots_mod.halt(request.POST.get("reason") or "manual halt", by="web")
+            bots_mod.halt(request.POST.get("reason") or "manual halt", by=me.username, owner=me)
             messages.warning(request, "Trading halted: no new entries. Open positions are still managed.")
         elif action == "resume":
-            bots_mod.resume(by="web")
+            bots_mod.resume(by=me.username, owner=me)
             messages.success(request, "Entries allowed again.")
         elif action == "kill":
             if request.POST.get("confirm") != "KILL":
                 messages.error(request, "Type KILL to confirm the kill switch.")
             else:
-                n = bots_mod.kill(by="web")
+                n = bots_mod.kill(by=me.username, owner=me)
                 messages.warning(request, f"Kill switch: {n} position(s) sold, all bots stopped, entries halted.")
         elif action == "limits":
             try:
-                c.max_daily_loss_pct = max(0.0, float(request.POST.get("max_daily_loss_pct") or 0))
+                c.max_daily_loss_pct = max(0.0, float(request.POST.get("max_daily_loss_pct") or 0)) or None
                 c.max_exposure = max(0.0, float(request.POST.get("max_exposure") or 0))
-                c.max_orders_per_hour = max(1, int(request.POST.get("max_orders_per_hour") or 1))
+                c.max_orders_per_hour = max(0, int(request.POST.get("max_orders_per_hour") or 0))
                 c.min_dry_run_days = max(0, int(request.POST.get("min_dry_run_days") or 0))
                 c.save()
                 messages.success(request, "Risk limits saved.")
@@ -465,15 +470,15 @@ def control(request):
             else:
                 messages.warning(request, "No Telegram or webhook configured (see .env.example).")
         return redirect("trading:control")
-    ok_live, missing = live_allowed()
+    ok_live, missing = live_allowed(me)
     return render(request, "trading/control.html", {
-        "c": c, "bots": Bot.objects.select_related("config__coin")[:50],
-        "orders": BotOrder.objects.select_related("bot__config__coin")[:30],
+        "c": c, "bots": owned(Bot.objects.select_related("config__coin"), me)[:50],
+        "orders": owned(BotOrder.objects.select_related("bot__config__coin"), me)[:30],
         "live_ok": ok_live, "live_missing": missing, "notify": notify.configured(),
-        "today": {m: bots_mod.realised_today(m) for m in Bot.Mode.values},
-        "exposure": {m: bots_mod.exposure(m) for m in Bot.Mode.values},
-        "running": Bot.objects.filter(status=Bot.Status.RUNNING).count(),
-        "signals": LiveSignal.objects.all()[:20],
+        "today": {m: bots_mod.realised_today(m, me) for m in Bot.Mode.values},
+        "exposure": {m: bots_mod.exposure(m, me) for m in Bot.Mode.values},
+        "running": owned(Bot.objects.filter(status=Bot.Status.RUNNING), me).count(),
+        "signals": LiveSignal.objects.all()[:20] if me.is_staff else [],
         "signal_api": bool(settings.TRADING.get("SIGNAL_API_TOKEN")),
     })
 
@@ -489,7 +494,7 @@ from .models import PortfolioRun  # noqa: E402
 @login_required
 @require_POST
 def portfolio_create(request, pk: int):
-    cfg = get_object_or_404(StrategyConfig.objects.select_related("coin"), pk=pk)
+    cfg = get_owned(StrategyConfig.objects.select_related("coin"), request.user, pk=pk)
     ids = [int(x) for x in request.POST.getlist("coins") if x.isdigit()]
     coins = list(Coin.objects.filter(pk__in=ids, verified_at__isnull=False))
     form = BacktestForm(request.POST)
@@ -519,7 +524,7 @@ def portfolio_create(request, pk: int):
 
 @login_required
 def portfolio_detail(request, pk: int):
-    run = get_object_or_404(PortfolioRun.objects.select_related("config"), pk=pk)
+    run = get_owned(PortfolioRun.objects.select_related("config"), request.user, pk=pk)
     trades = sorted(run.trades, key=lambda t: t["entry_time"], reverse=True)
     for t in trades:
         t["entry_dt"] = datetime.fromtimestamp(t["entry_time"], tz=timezone.utc)
@@ -585,13 +590,13 @@ from . import journal as journal_mod  # noqa: E402
 def journal_partial(request, kind: str, pk: int):
     """Trade journal (roadmap 7.1) for a backtest, paper session or bot, as an HTML fragment."""
     if kind == "backtest":
-        obj = get_object_or_404(BacktestRun.objects.select_related("config__coin"), pk=pk)
+        obj = get_owned(BacktestRun.objects.select_related("config__coin"), request.user, pk=pk)
         trades = obj.trades.all()
     elif kind == "paper":
-        obj = get_object_or_404(PaperSession.objects.select_related("config__coin"), pk=pk)
+        obj = get_owned(PaperSession.objects.select_related("config__coin"), request.user, pk=pk)
         trades = obj.trades.all()
     elif kind == "bot":
-        obj = get_object_or_404(Bot.objects.select_related("config__coin"), pk=pk)
+        obj = get_owned(Bot.objects.select_related("config__coin"), request.user, pk=pk)
         trades = obj.model_trades.all()
     else:
         raise Http404

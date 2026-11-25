@@ -144,7 +144,9 @@ class SignalRecordingTests(ZonePaperMatchesBacktestTests):
         from django.contrib.auth.models import User
         from django.urls import reverse
 
-        self.client.force_login(User.objects.create_user("p", password="not-a-real-pass-123"))
+        u = User.objects.create_user("p", password="not-a-real-pass-123")
+        StrategyConfig.objects.update(owner=u)
+        self.client.force_login(u)
         page = self.client.get(reverse("trading:backtest_detail", args=[run.pk]))
         self.assertContains(page, "Export signals")
         self.assertContains(page, "zone support")

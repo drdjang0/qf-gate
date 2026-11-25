@@ -40,6 +40,10 @@ L, S = CascadeLevel.Status, CascadeLevel.SellStatus
 PRICE_RATIO = (0.2, 3.0)  # level 1 buy price vs the market: outside this looks like a misplaced decimal
 TICK_THROTTLE_SECONDS = 2
 HALT_NOTE = "Kill switch is on: no new buys (sells keep working)"
+# the fields the engine decides; live order ids belong to cascades/live.py, so the engine never overwrites them
+ENGINE_FIELDS = ["status", "skip_reason", "skip_price", "placed_at", "filled_at", "fill_price", "qty", "buy_fee",
+                 "sell_status", "sell_target", "sell_placed_at", "sell_filled_at", "sell_fee", "pnl", "target_price",
+                 "amount_usdt", "take_profit_pct"]
 
 
 class Conflict(Exception):
@@ -95,13 +99,19 @@ def check_price(levels: list[dict], price: float | None) -> None:
 
 def create(coin: Coin, kind: str, levels: list[dict], *, trigger_price: float | None = None, fee_pct: float = 0.2,
            config: dict | None = None, name: str = "", price: float | None = None,
-           now: datetime | None = None) -> Cascade:
+           now: datetime | None = None, owner=None, mode: str = "dry_run") -> Cascade:
     """Save a cascade and its levels; with a price, run the first step at once (place level 1)."""
     now = now or timezone.now()
     check_price(levels, price)
+    if mode == Cascade.Mode.LIVE:
+        from trading.brokers import live_allowed
+
+        ok, missing = live_allowed(owner)
+        if not ok:
+            raise ValueError("Live trading is not allowed: " + "; ".join(missing))
     with transaction.atomic():
         c = Cascade.objects.create(
-            coin=coin, kind=kind, name=name[:100], config=config or {}, trigger_price=trigger_price, fee_pct=fee_pct,
+            owner=owner, mode=mode, coin=coin, kind=kind, name=name[:100], config=config or {}, trigger_price=trigger_price, fee_pct=fee_pct,
             status=Cascade.Status.PENDING_TRIGGER if trigger_price else Cascade.Status.ACTIVE, watch_from=now,
         )
         CascadeLevel.objects.bulk_create([CascadeLevel(cascade=c, index=lv["index"], target_price=lv["target_price"],
@@ -124,9 +134,14 @@ def step(cascade_id: int, price: float, now: datetime | None = None) -> int:
     now = now or timezone.now()
     try:
         with transaction.atomic():
-            return _step(cascade_id, float(price), now)
+            n = _step(cascade_id, float(price), now)
     except Conflict:
         return 0
+    if Cascade.objects.filter(pk=cascade_id, mode=Cascade.Mode.LIVE).exists():
+        from . import live
+
+        n += live.reconcile(cascade_id, price=float(price))
+    return n
 
 
 def _step(pk: int, price: float, now: datetime) -> int:
@@ -152,9 +167,10 @@ def _step(pk: int, price: float, now: datetime) -> int:
             c.status = Cascade.Status.ACTIVE
             ev("armed", f"Price reached the trigger {fmt(c.trigger_price)}: the cascade is active", p=price)
 
+    simulated = c.mode != Cascade.Mode.LIVE
     if c.status == Cascade.Status.ACTIVE:
-        for lv in levels:  # resting buy filled?
-            if lv.status == L.PLACED and lv.placed_at:
+        for lv in levels:  # resting buy filled? (dry-run: from prices; live: Gate.io reports it, see live.py)
+            if simulated and lv.status == L.PLACED and lv.placed_at:
                 lo, _ = window(c.coin, lv.placed_at, price, now)
                 if lo <= lv.target_price:
                     lv.status, lv.fill_price, lv.filled_at = L.FILLED, lv.target_price, now
@@ -164,7 +180,8 @@ def _step(pk: int, price: float, now: datetime) -> int:
                     ev("bought", f"Bought {fmt(lv.qty)} for {fmt(lv.amount_usdt)} {c.coin.quote} at {fmt(lv.fill_price)}",
                        lv.index, lv.fill_price)
         for lv in levels:  # resting sell filled? (never in the step that placed it)
-            if lv.status == L.FILLED and lv.sell_status == S.PLACED and lv.sell_placed_at and lv.sell_placed_at < now:
+            if (simulated and lv.status == L.FILLED and lv.sell_status == S.PLACED and lv.sell_placed_at
+                    and lv.sell_placed_at < now):
                 _, hi = window(c.coin, lv.sell_placed_at, price, now)
                 if hi >= lv.sell_target:
                     gross = (lv.qty or 0) * lv.sell_target
@@ -184,7 +201,7 @@ def _step(pk: int, price: float, now: datetime) -> int:
         resting = any(lv.status == L.PLACED for lv in levels)
         pending = [lv for lv in levels if lv.status == L.PENDING]
         if pending and not resting:
-            if TradingControl.get().halted:
+            if TradingControl.for_user(c.owner if c.owner_id else None).halted:
                 note = HALT_NOTE
                 if c.last_error != HALT_NOTE:
                     ev("blocked", HALT_NOTE)
@@ -213,7 +230,7 @@ def _step(pk: int, price: float, now: datetime) -> int:
         Cascade.objects.filter(pk=c.pk).update(last_price=price, last_checked_at=now, last_error=note)
         return 0
     for lv in dirty.values():
-        lv.save()
+        lv.save(update_fields=ENGINE_FIELDS)
     if not Cascade.objects.filter(pk=c.pk, version=version).update(
             version=version + 1, status=c.status, last_price=price, last_checked_at=now, last_error=note, updated_at=now):
         raise Conflict
@@ -238,6 +255,9 @@ def step_all() -> int:
             except Exception as exc:  # noqa: BLE001 - one cascade must not stop the others
                 log.exception("Cascade %s step failed", c.pk)
                 Cascade.objects.filter(pk=c.pk).update(last_error=f"{exc.__class__.__name__}: {exc}"[:2000])
+    from . import live
+
+    n += live.reconcile_idle()
     return n
 
 
@@ -255,6 +275,13 @@ def on_price(coin: Coin, price: float) -> int:
 
 
 # -- user actions -------------------------------------------------------------------------------------
+
+
+def _reconcile_if_live(cascade: Cascade) -> None:
+    if Cascade.objects.filter(pk=cascade.pk, mode=Cascade.Mode.LIVE).exists():
+        from . import live
+
+        live.reconcile(cascade.pk)
 
 
 def _mutate(cascade: Cascade, fn) -> None:
@@ -281,6 +308,7 @@ def hold(cascade: Cascade) -> None:
         c.levels.filter(status=L.FILLED, sell_status=S.PLACED).update(sell_status=S.NONE, sell_placed_at=None)
         return [("held", "On hold: resting orders withdrawn", None)]
     _mutate(cascade, fn)
+    _reconcile_if_live(cascade)
 
 
 def resume(cascade: Cascade, price: float | None = None) -> None:
@@ -305,6 +333,7 @@ def cancel(cascade: Cascade) -> None:
         held = c.levels.filter(status=L.FILLED, sell_status=S.PLACED).update(sell_status=S.NONE, sell_placed_at=None)
         return [("cancelled", "Cancelled" + (f": {held} bought level(s) kept without a sell" if held else ""), None)]
     _mutate(cascade, fn)
+    _reconcile_if_live(cascade)
 
 
 def cancel_level(level: CascadeLevel, side: str) -> None:
@@ -322,9 +351,10 @@ def cancel_level(level: CascadeLevel, side: str) -> None:
             lv.sell_status, lv.sell_placed_at, lv.sell_target = S.NONE, None, None
         else:
             raise ValueError("side must be buy or sell")
-        lv.save()
+        lv.save(update_fields=ENGINE_FIELDS)
         return [("level_cancelled", f"{side.title()} order withdrawn", lv.index)]
     _mutate(level.cascade, fn)
+    _reconcile_if_live(level.cascade)
 
 
 def edit_level(level: CascadeLevel, *, target_price: float | None = None, amount_usdt: float | None = None,
@@ -353,6 +383,7 @@ def edit_level(level: CascadeLevel, *, target_price: float | None = None, amount
             msg = f"Edited: take-profit sell moved to {fmt(sell_target)}"
         else:
             raise ValueError("Only a pending level, a resting buy or a resting sell can be edited")
-        lv.save()
+        lv.save(update_fields=ENGINE_FIELDS)
         return [("edited", msg, lv.index)]
     _mutate(level.cascade, fn)
+    _reconcile_if_live(level.cascade)

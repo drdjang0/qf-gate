@@ -63,7 +63,7 @@ class DryRunBroker:
         self.client = client or get_client()
         self.depth = depth
 
-    def market(self, pair: str, side: str, qty: float) -> Fill:
+    def market(self, pair: str, side: str, qty: float, text: str | None = None) -> Fill:
         try:
             book = self.client.get_order_book(pair, limit=self.depth)
         except ExchangeError as exc:
@@ -110,56 +110,170 @@ class GateBroker:
         rows = self._request("GET", "/spot/accounts", f"currency={currency.upper()}")
         return float(rows[0]["available"]) if rows else 0.0
 
-    def market(self, pair: str, side: str, qty: float) -> Fill:
+    def _check_minimum(self, info: dict, base_amount: float, quote_amount: float) -> None:
+        """Gate rejects orders below the pair's minimum; say so before sending (verified CurrencyPair fields)."""
+        if info.get("min_base_amount") and base_amount < info["min_base_amount"]:
+            raise OrderError(f"Order of {base_amount:g} is below Gate.io's minimum {info['min_base_amount']:g}")
+        if info.get("min_quote_amount") and quote_amount < info["min_quote_amount"]:
+            raise OrderError(f"Order worth {quote_amount:.4g} is below Gate.io's minimum {info['min_quote_amount']:g}")
+
+    def market(self, pair: str, side: str, qty: float, text: str | None = None) -> Fill:
         info = self.client.pair_info(pair) or {"price_precision": 2, "amount_precision": 6}
+        last = float((self.client.get_ticker(pair) or {}).get("last") or 0)
         if side == "buy":
             # Gate market buys are sized in the quote currency
-            last = float((self.client.get_ticker(pair) or {}).get("last") or 0)
             if last <= 0:
                 raise OrderError("No last price to size the market buy")
             amount = math.floor(qty * last * 100) / 100
+            self._check_minimum(info, qty, amount)
         else:
             step = 10 ** info["amount_precision"]
             amount = math.floor(qty * step) / step
+            self._check_minimum(info, amount, amount * last if last else float("inf"))
         if amount <= 0:
             raise OrderError("Order amount rounds to zero")
         order = self._request("POST", "/spot/orders", body={
             "currency_pair": pair, "side": side, "type": "market", "amount": f"{amount}",
-            "time_in_force": "ioc", "text": f"t-qfgate{int(time.time())}"[:28],
+            "time_in_force": "ioc", "text": text or client_id(),
         })
         oid = str(order.get("id", ""))
         if order.get("status") != "closed" and oid:
             order = self._request("GET", f"/spot/orders/{oid}", f"currency_pair={pair}")
+        fill = self.fill_from(order, pair)
+        if fill is None:
+            raise OrderError(f"Order {oid} did not fill (status {order.get('status')}, {order.get('finish_as')})")
+        return fill
+
+    def fill_from(self, order: dict, pair: str) -> Fill | None:
+        """A Fill from a Gate order object. The quantity is what actually changed hands in the coin:
+        on a buy whose fee is taken in the coin (Gate's default), the coin received is the filled amount
+        minus that fee, so a later sell of `qty` never asks for more than the account holds."""
+        side = order.get("side")
         avg = float(order.get("avg_deal_price") or order.get("fill_price") or 0)
-        filled_total = float(order.get("filled_total") or 0)
-        filled = filled_total / avg if avg else 0.0
-        if filled <= 0:
-            raise OrderError(f"Order {oid} did not fill (status {order.get('status')})")
-        fee = float(order.get("fee") or 0)
-        if order.get("fee_currency") and order["fee_currency"] != pair.split("_")[1]:
-            fee *= avg  # fee charged in the base currency: express it in the quote currency
-        return Fill(filled, avg, fee, oid)
+        filled = float(order.get("filled_amount") or 0)
+        if not filled and avg:
+            filled = float(order.get("filled_total") or 0) / avg
+        if filled <= 0 or avg <= 0:
+            return None
+        base, quote = pair.upper().split("_", 1)
+        fee, fc = float(order.get("fee") or 0), (order.get("fee_currency") or "").upper()
+        gt_fee, point_fee = float(order.get("gt_fee") or 0), float(order.get("point_fee") or 0)
+        qty = filled
+        if fc == base:
+            fee_quote = fee * avg
+            if side == "buy":
+                qty = filled - fee
+        elif fc == quote:
+            fee_quote = fee
+        else:
+            fee_quote = 0.0
+        if gt_fee:
+            gt = float((self.client.get_ticker(f"GT_{quote}") or {}).get("last") or 0)
+            fee_quote += gt_fee * gt  # GT paid the fee: its value at today's GT price (estimate)
+        if point_fee:
+            fee_quote += point_fee  # 1 point is about 1 USDT
+        return Fill(qty, avg, fee_quote, str(order.get("id", "")))
+
+    def find_order(self, pair: str, text: str, since: float) -> dict | None:
+        """Find an order by our own client id after a crash. Gate looks a custom id up only while the order
+        is open, so finished orders are searched by their `text` in the recent list."""
+        try:
+            return self._request("GET", f"/spot/orders/{text}", f"currency_pair={pair}")
+        except OrderError:
+            pass
+        rows = self._request("GET", "/spot/orders",
+                             f"currency_pair={pair}&status=finished&limit=100&from={int(since) - 60}")
+        return next((o for o in rows if o.get("text") == text), None)
+
+    # -- the stop-loss on the exchange (a price-triggered order), so a stop holds even if QF-gate is down --
+
+    def place_stop(self, pair: str, qty: float, stop: float, account: str = "normal") -> str:
+        info = self.client.pair_info(pair) or {"price_precision": 2, "amount_precision": 6}
+        step = 10 ** info["amount_precision"]
+        amount = math.floor(qty * step) / step
+        price = f"{stop:.{info['price_precision']}f}"
+        body = {"market": pair, "trigger": {"price": price, "rule": "<=", "expiration": 30 * 86400},
+                "put": {"type": "market", "side": "sell", "price": price, "amount": f"{amount}",
+                        "account": account, "time_in_force": "ioc"}}
+        try:
+            r = self._request("POST", "/spot/price_orders", body=body)
+        except OrderError as exc:
+            if account == "normal" and "unified" in str(exc).lower():
+                return self.place_stop(pair, qty, stop, account="unified")  # unified accounts need "unified"
+            raise
+        return str(r.get("id_string") or r.get("id"))
+
+    def stop_status(self, stop_id: str) -> dict:
+        return self._request("GET", f"/spot/price_orders/{stop_id}")
+
+    def cancel_stop(self, stop_id: str) -> dict:
+        return self._request("DELETE", f"/spot/price_orders/{stop_id}")
+
+    def get_order(self, pair: str, order_id: str) -> dict:
+        return self._request("GET", f"/spot/orders/{order_id}", f"currency_pair={pair}")
+
+    def limit(self, pair: str, side: str, amount_base: float, price: float, text: str) -> dict:
+        """A resting limit order (good till cancelled), amount in the coin. Returns Gate's order object."""
+        info = self.client.pair_info(pair) or {"price_precision": 2, "amount_precision": 6}
+        step = 10 ** info["amount_precision"]
+        amount = math.floor(amount_base * step) / step
+        if amount <= 0:
+            raise OrderError("Order amount rounds to zero")
+        self._check_minimum(info, amount, amount * price)
+        return self._request("POST", "/spot/orders", body={
+            "currency_pair": pair, "side": side, "type": "limit", "amount": f"{amount}",
+            "price": f"{price:.{info['price_precision']}f}", "time_in_force": "gtc", "text": text,
+        })
+
+    def cancel_order(self, pair: str, order_id: str) -> dict:
+        """Cancel; returns the order as it ended (it may have filled, fully or partly, just before)."""
+        return self._request("DELETE", f"/spot/orders/{order_id}", f"currency_pair={pair}")
 
 
-def live_allowed() -> tuple[bool, list[str]]:
-    """Every switch that must be on before a live bot may start. Returns (ok, reasons it is not)."""
+def client_id(tag: str = "qf") -> str:
+    """Our id for an order (Gate `text`): "t-" + at most 28 of [0-9A-Za-z_.-]."""
+    return f"t-{tag}{int(time.time() * 1000)}"[:30]
+
+
+def _credentials(owner):
+    """The owner's Gate.io key from the API keys page (the operator may still use the .env keys)."""
+    if owner is None:
+        key, secret = settings.GATE.get("API_KEY"), settings.GATE.get("API_SECRET")
+        return (key, secret) if key and secret else None
+    from accounts.crypto import KeyStoreError
+    from accounts.keys import gate_credentials
+
+    try:
+        return gate_credentials(owner)
+    except KeyStoreError:
+        return None
+
+
+def live_allowed(owner=None) -> tuple[bool, list[str]]:
+    """Every switch that must be on before a live order may be sent. Returns (ok, reasons it is not).
+    1. the server allows live trading (LIVE_TRADING=true, set by the operator);
+    2. the user has a Gate.io key (API keys page);
+    3. the user switched live trading on (Trading settings)."""
     from .models import TradingControl
 
     missing = []
     if str(settings.TRADING.get("LIVE_TRADING")).lower() not in {"1", "true", "yes", "on"}:
         missing.append("LIVE_TRADING=true is not set in the server environment")
-    if not (settings.GATE.get("API_KEY") and settings.GATE.get("API_SECRET")):
-        missing.append("GATE_API_KEY / GATE_API_SECRET are not set")
-    if not TradingControl.get().live_enabled:
-        missing.append("Live trading is switched off on the Control page")
+    if not _credentials(owner):
+        missing.append("No Gate.io API key (add yours on the API keys page)" if owner is not None
+                       else "GATE_API_KEY / GATE_API_SECRET are not set")
+    if not TradingControl.for_user(owner).live_enabled:
+        missing.append("Live trading is switched off in your settings")
     return not missing, missing
 
 
 def get_broker(bot):
     fee = bot.risk.get("fee_rate", 0.002)
     if bot.mode == "live":
-        ok, missing = live_allowed()
+        owner = bot.config.owner if bot.config.owner_id else None
+        ok, missing = live_allowed(owner)
         if not ok:
             raise OrderError("Live trading is not allowed: " + "; ".join(missing))
-        return GateBroker(settings.GATE["API_KEY"], settings.GATE["API_SECRET"])
+        key, secret = _credentials(owner)
+        return GateBroker(key, secret)
     return DryRunBroker(fee)

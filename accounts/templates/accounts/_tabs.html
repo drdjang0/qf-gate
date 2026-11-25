@@ -1,0 +1,15 @@
+<div class="acct-tabs">
+  <a href="{% url 'accounts:settings' %}" class="{% if tab == 'settings' %}on{% endif %}">Trading settings</a>
+  <a href="{% url 'accounts:keys' %}" class="{% if tab == 'keys' %}on{% endif %}">API keys</a>
+  {% if user.is_staff %}<a href="{% url 'accounts:users' %}" class="{% if tab == 'users' %}on{% endif %}">Users</a>{% endif %}
+  <a href="{% url 'password_change' %}">Change password</a>
+</div>
+<style>
+  .acct-tabs { display:flex; gap:4px; flex-wrap:wrap; margin:6px 0 12px; }
+  .acct-tabs a { padding:6px 12px; border:1px solid var(--line, #dde1e8); border-radius:8px; text-decoration:none; }
+  .acct-tabs a.on { background:var(--accent, #2563eb); color:#fff; border-color:transparent; }
+  form.stack { display:grid; gap:10px; max-width:620px; }
+  form.stack label { display:flex; flex-direction:column; gap:3px; }
+  form.stack label.check { flex-direction:row; align-items:center; gap:8px; }
+  form.stack .helptext, form.stack small { font-size:12px; color:var(--muted, #5d6677); }
+</style>

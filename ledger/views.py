@@ -17,23 +17,24 @@ from .pnl import DEFAULT_METHOD, METHODS
 from .prices import live_prices
 
 
-def _refresh() -> None:
+def _refresh(user) -> None:
     try:
-        recorder.ensure_accounts()
+        recorder.ensure_accounts(user)
         recorder.record_internal()
     except Exception:  # noqa: BLE001 - the page still shows what is already recorded
         pass
 
 
-def _default_scope() -> str:
-    return "real" if Transaction.objects.filter(account__kind=Account.Kind.REAL).exists() else "sim"
+def _default_scope(user) -> str:
+    mine = Transaction.objects.filter(account__owner=user, account__kind=Account.Kind.REAL)
+    return "real" if mine.exists() else "sim"
 
 
 def _filters(request) -> tuple[FilterForm, dict]:
     data = request.GET.copy()
-    data.setdefault("scope", _default_scope())
+    data.setdefault("scope", _default_scope(request.user))
     data.setdefault("method", DEFAULT_METHOD)
-    form = FilterForm(data)
+    form = FilterForm(data, user=request.user)
     form.is_valid()
     d = dict(getattr(form, "cleaned_data", {}))
     d.setdefault("scope", data["scope"])
@@ -41,8 +42,8 @@ def _filters(request) -> tuple[FilterForm, dict]:
     return form, d
 
 
-def _scoped(scope: str):
-    qs = Transaction.objects.select_related("account", "coin")
+def _scoped(scope: str, user):
+    qs = Transaction.objects.select_related("account", "coin").filter(account__owner=user)
     if scope == "real":
         return qs.filter(account__kind=Account.Kind.REAL)
     if scope == "sim":
@@ -50,33 +51,33 @@ def _scoped(scope: str):
     return qs.filter(account_id=int(scope)) if str(scope).isdigit() else qs.none()
 
 
-def _scope_label(scope: str) -> str:
+def _scope_label(scope: str, user=None) -> str:
     if scope == "real":
         return "All real-money accounts"
     if scope == "sim":
         return "All simulated accounts"
-    acc = Account.objects.filter(pk=scope).first() if str(scope).isdigit() else None
+    acc = Account.objects.filter(pk=scope, owner=user).first() if str(scope).isdigit() else None
     return acc.name if acc else "?"
 
 
 @login_required
 def index(request):
-    _refresh()
+    _refresh(request.user)
     form, f = _filters(request)
-    txs = list(_scoped(f["scope"]))
+    txs = list(_scoped(f["scope"], request.user))
     h = reports.holdings(txs, f["method"], live_prices())
-    gate = Account.objects.filter(sync=Account.Sync.GATE).first()
+    gate = Account.objects.filter(sync=Account.Sync.GATE, owner=request.user).first()
     return render(request, "ledger/index.html", {
-        "form": form, "f": f, "scope_label": _scope_label(f["scope"]), "h": h, "count": len(txs),
+        "form": form, "f": f, "scope_label": _scope_label(f["scope"], request.user), "h": h, "count": len(txs),
         "open_rows": [r for r in h["rows"] if r["open"]], "closed_rows": [r for r in h["rows"] if not r["open"]],
-        "methods": METHODS, "method_label": METHODS[f["method"]], "configured": gate_sync.configured(), "gate": gate,
+        "methods": METHODS, "method_label": METHODS[f["method"]], "configured": gate_sync.configured(request.user), "gate": gate,
         "check": BalanceCheck.objects.filter(account=gate).first() if gate else None,
-        "accounts": Account.objects.all(),
+        "accounts": Account.objects.filter(owner=request.user),
     })
 
 
-def _filtered(f: dict):
-    qs = _scoped(f["scope"])
+def _filtered(f: dict, user):
+    qs = _scoped(f["scope"], user)
     if f.get("asset"):
         qs = qs.filter(base__iexact=f["asset"].strip())
     for name in ("side", "route", "kind"):
@@ -107,9 +108,9 @@ def _tx_row(t: Transaction) -> list:
 
 @login_required
 def transactions(request):
-    _refresh()
+    _refresh(request.user)
     form, f = _filters(request)
-    qs = _filtered(f)
+    qs = _filtered(f, request.user)
     start, end = form.period() if form.is_valid() else (None, None)
     if start:
         qs = qs.filter(executed_at__gte=start)
@@ -125,19 +126,19 @@ def transactions(request):
     query = request.GET.copy()
     query.pop("page", None)
     return render(request, "ledger/transactions.html", {
-        "form": form, "f": f, "page": page, "query": query.urlencode(), "scope_label": _scope_label(f["scope"]),
+        "form": form, "f": f, "page": page, "query": query.urlencode(), "scope_label": _scope_label(f["scope"], request.user),
     })
 
 
 @login_required
 def report(request):
-    _refresh()
+    _refresh(request.user)
     form, f = _filters(request)
     start, end = form.period() if form.is_valid() else (None, None)
-    rep = reports.period(_scoped(f["scope"]), f["method"], start, end, f.get("asset") or "")
+    rep = reports.period(_scoped(f["scope"], request.user), f["method"], start, end, f.get("asset") or "")
     if request.GET.get("format") == "csv":
         resp, w = _csv_response("qfgate-pnl-report.csv")
-        w.writerow(["P&L report", _scope_label(f["scope"]), METHODS[f["method"]],
+        w.writerow(["P&L report", _scope_label(f["scope"], request.user), METHODS[f["method"]],
                     f"from {f.get('start') or 'start'}", f"to {f.get('end') or 'now'} (UTC)"])
         w.writerow(["market", "coin", "quote", "buys", "bought_qty", "spent", "avg_buy", "sells", "sold_qty", "received",
                     "avg_sell", "deposited_qty", "withdrawn_qty", "net_qty", "fees", "realised_pnl"])
@@ -152,15 +153,15 @@ def report(request):
             w.writerow(_tx_row(t))
         return resp
     return render(request, "ledger/report.html", {
-        "form": form, "f": f, "rep": rep, "start": start, "end": end, "scope_label": _scope_label(f["scope"]),
+        "form": form, "f": f, "rep": rep, "start": start, "end": end, "scope_label": _scope_label(f["scope"], request.user),
         "methods": METHODS,
     })
 
 
 @login_required
 def tx_new(request):
-    recorder.ensure_accounts()
-    form = TransactionForm(request.POST or None, initial={"kind": "trade", "market": "spot", "side": "buy",
+    recorder.ensure_accounts(request.user)
+    form = TransactionForm(request.POST or None, user=request.user, initial={"kind": "trade", "market": "spot", "side": "buy",
                                                           "quote": "USDT", "account": request.GET.get("account")})
     if request.method == "POST" and form.is_valid():
         tx = form.save()
@@ -177,9 +178,9 @@ def _url(name, *args):
 
 @login_required
 def tx_edit(request, pk: int):
-    tx = get_object_or_404(Transaction, pk=pk)
+    tx = get_object_or_404(Transaction, pk=pk, account__owner=request.user)
     if tx.route == Transaction.Route.MANUAL or tx.source_key.startswith("manual:"):
-        form = TransactionForm(request.POST or None, instance=tx)
+        form = TransactionForm(request.POST or None, instance=tx, user=request.user)
         if request.method == "POST" and form.is_valid():
             form.save()
             messages.success(request, "Saved.")
@@ -201,7 +202,7 @@ def tx_edit(request, pk: int):
 @login_required
 @require_POST
 def tx_delete(request, pk: int):
-    tx = get_object_or_404(Transaction, pk=pk)
+    tx = get_object_or_404(Transaction, pk=pk, account__owner=request.user)
     if not tx.source_key.startswith("manual:"):
         messages.error(request, "Only manual entries can be deleted.")
     else:
@@ -212,22 +213,25 @@ def tx_delete(request, pk: int):
 
 @login_required
 def accounts(request):
-    recorder.ensure_accounts()
+    recorder.ensure_accounts(request.user)
     form = AccountForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        acc = form.save()
+        acc = form.save(commit=False)
+        acc.owner = request.user
+        acc.save()
         messages.success(request, f"Account {acc.name} added.")
         return redirect("ledger:accounts")
     rows = []
-    for a in Account.objects.prefetch_related("sync_states"):
+    for a in Account.objects.filter(owner=request.user).prefetch_related("sync_states"):
         rows.append({"a": a, "count": a.transactions.count(), "states": list(a.sync_states.all()),
                      "check": a.balance_checks.first()})
-    return render(request, "ledger/accounts.html", {"form": form, "rows": rows, "configured": gate_sync.configured()})
+    return render(request, "ledger/accounts.html", {"form": form, "rows": rows,
+                                                    "configured": gate_sync.configured(request.user)})
 
 
 @login_required
 def account_edit(request, pk: int):
-    acc = get_object_or_404(Account, pk=pk)
+    acc = get_object_or_404(Account, pk=pk, owner=request.user)
     form = AccountForm(request.POST or None, instance=acc)
     if request.method == "POST" and form.is_valid():
         form.save()
@@ -239,9 +243,9 @@ def account_edit(request, pk: int):
 @login_required
 @require_POST
 def account_action(request, pk: int, what: str):
-    acc = get_object_or_404(Account, pk=pk)
-    if not gate_sync.configured():
-        messages.error(request, "Set GATE_READ_API_KEY and GATE_READ_API_SECRET (a read-only key) in .env first.")
+    acc = get_object_or_404(Account, pk=pk, owner=request.user)
+    if not gate_sync.configured(request.user):
+        messages.error(request, "Add your Gate.io API key first (Account → API keys; a read-only key is enough).")
         return redirect("ledger:accounts")
     try:
         if what == "sync":

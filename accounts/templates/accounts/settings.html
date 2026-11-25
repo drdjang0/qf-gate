@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Trading settings · QF-gate{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">Your account: {{ user.username }}</h2>
+  {% include "accounts/_tabs.html" with tab="settings" %}
+
+  <h3>Dry-run or live</h3>
+  {% if c.live_enabled %}
+    <p class="warn"><b>Live trading is ON.</b> Live bots and live cascades send real orders with your own Gate.io key.
+      Dry-run bots and cascades keep working as before.</p>
+  {% else %}
+    <p class="ok"><b>Dry-run only.</b> Bots and cascades fill on real prices, but nothing is sent to the exchange.</p>
+  {% endif %}
+  <ul style="font-size:14px">
+    <li>Server allows live trading: {% if server_live %}<span class="ok">yes</span>{% else %}<span class="err">no</span> <small class="muted">(the operator sets LIVE_TRADING=true on the server)</small>{% endif %}</li>
+    <li>Your Gate.io key: {% if key %}<span class="ok">…{{ key.key_last4 }}</span>{% else %}<span class="err">none</span> - <a href="{% url 'accounts:keys' %}">add one</a>{% endif %}</li>
+  </ul>
+  <form method="post" class="stack">{% csrf_token %}<input type="hidden" name="action" value="mode">
+    {% if c.live_enabled %}
+      <input type="hidden" name="mode" value="dry_run"><button class="btn primary">Switch to dry-run only</button>
+    {% else %}
+      <input type="hidden" name="mode" value="live">
+      <label>Type LIVE to allow real orders <input name="confirm" autocomplete="off" placeholder="LIVE"></label>
+      <button class="btn danger">Allow live trading</button>
+    {% endif %}
+  </form>
+  <p class="muted" style="font-size:12.5px">Each bot and cascade is still started as dry-run or live on its own page; this switch only
+    allows the live ones. Switching it off stops new live orders (open live positions are still managed).</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Strategies and limits</h3>
+  <form method="post" class="stack">{% csrf_token %}<input type="hidden" name="action" value="save">
+    {{ form.non_field_errors }}
+    <label class="check">{{ form.strategies_enabled }} {{ form.strategies_enabled.label }}</label>
+    <small>Off: QF-gate without strategies. Strategies and Bots disappear from the menu; Market, Cascades, Portfolio and Intel stay.</small>
+    <label class="check">{{ form.require_checks }} {{ form.require_checks.label }}</label>
+    <small>On: a live bot needs its strategy to pass the look-ahead and warm-up checks and to have run in dry-run for the number of days below.
+      Off: you can start any strategy live straight away (at your own risk).</small>
+    <label>{{ form.min_dry_run_days.label }} {{ form.min_dry_run_days }}</label>
+    <label>{{ form.max_daily_loss_pct.label }} {{ form.max_daily_loss_pct }} <small>{{ form.max_daily_loss_pct.help_text }}</small>{{ form.max_daily_loss_pct.errors }}</label>
+    <label>{{ form.max_exposure.label }} {{ form.max_exposure }} <small>{{ form.max_exposure.help_text }}</small>{{ form.max_exposure.errors }}</label>
+    <label>{{ form.max_orders_per_hour.label }} {{ form.max_orders_per_hour }} <small>{{ form.max_orders_per_hour.help_text }}</small>{{ form.max_orders_per_hour.errors }}</label>
+    <button class="btn primary">Save</button>
+  </form>
+  <p class="muted" style="font-size:12.5px">Limits only stop <b>new</b> entries; exits are never blocked. The kill switch is on the Bots (Control) page.</p>
+</div>
+{% endblock %}

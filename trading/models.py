@@ -14,6 +14,7 @@ INTERVAL_CHOICES = [("1m", "1 minute"), ("5m", "5 minutes"), ("15m", "15 minutes
 class StrategyConfig(models.Model):
     """A strategy + coin + timeframe + parameters. Backtests and paper sessions run from it."""
 
+    owner = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.CASCADE, related_name="strategy_configs")
     name = models.CharField(max_length=100)
     strategy_key = models.CharField(max_length=64)
     coin = models.ForeignKey(Coin, on_delete=models.CASCADE, related_name="strategy_configs")
@@ -309,21 +310,34 @@ class BotOrder(models.Model):
 
 
 class TradingControl(models.Model):
-    """Account-wide switches and risk limits (a single row, id=1)."""
+    """A user's switches and risk limits (one row per user; row id=1 is the operator's from before multi-user)."""
 
+    owner = models.OneToOneField("auth.User", null=True, blank=True, on_delete=models.CASCADE, related_name="trading_control")
     halted = models.BooleanField(default=False, help_text="Kill switch: no new entries while on")
     halted_reason = models.CharField(max_length=255, blank=True)
     halted_at = models.DateTimeField(null=True, blank=True)
     live_enabled = models.BooleanField(default=False, help_text="Allow live bots (also needs LIVE_TRADING=true and API keys)")
-    max_daily_loss_pct = models.FloatField(default=3.0, help_text="Halt when today's realised loss reaches this % of capital")
+    max_daily_loss_pct = models.FloatField(default=3.0, null=True, blank=True,
+                                           help_text="Halt when today's realised loss reaches this % of capital (empty = off)")
     max_exposure = models.FloatField(default=0.0, help_text="Max total open position value in the quote currency (0 = no limit)")
-    max_orders_per_hour = models.PositiveIntegerField(default=30)
+    max_orders_per_hour = models.PositiveIntegerField(default=30, help_text="0 = no limit")
     min_dry_run_days = models.PositiveIntegerField(default=7, help_text="Dry-run days a config needs before it can go live")
+    require_checks = models.BooleanField(default=True, help_text="Before a live bot: dry-run days + look-ahead / warm-up checks")
+    strategies_enabled = models.BooleanField(default=True, help_text="Off: use QF-gate without strategies (no Strategies / Bots)")
     updated_at = models.DateTimeField(auto_now=True)
 
     @classmethod
     def get(cls) -> TradingControl:
         obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    @classmethod
+    def for_user(cls, user) -> TradingControl:
+        if user is None:
+            return cls.get()
+        obj = cls.objects.filter(owner=user).first()
+        if obj is None:
+            obj, _ = cls.objects.get_or_create(owner=user)
         return obj
 
 

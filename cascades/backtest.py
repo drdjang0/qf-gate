@@ -13,8 +13,8 @@ from .models import CascadeBacktest
 
 def run(coin: Coin, kind: str, levels: list[dict], *, interval: str, start: datetime, end: datetime,
         trigger_price: float | None = None, fee_pct: float = 0.2, config: dict | None = None,
-        name: str = "") -> CascadeBacktest:
-    bt = CascadeBacktest(coin=coin, kind=kind, name=name[:100], config=config or {}, trigger_price=trigger_price,
+        name: str = "", owner=None) -> CascadeBacktest:
+    bt = CascadeBacktest(owner=owner, coin=coin, kind=kind, name=name[:100], config=config or {}, trigger_price=trigger_price,
                          fee_pct=fee_pct, interval=interval, start=start, end=end)
     bars = [b for b in load_bars(coin, interval, start, end, detail=False) if b.time >= int(start.timestamp())]
     if not bars:

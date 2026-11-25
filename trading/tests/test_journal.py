@@ -115,7 +115,9 @@ class JournalPageTests(TestCase):
                                              status=BacktestRun.Status.DONE)
         Trade.objects.create(backtest=self.run, entry_time=dt(0), exit_time=dt(2), entry_price=100, exit_price=110, qty=1,
                              stop=95, target=110, fees=0, pnl=10, r_multiple=2, exit_reason="target", entry_tag="breakout")
-        self.client.force_login(User.objects.create_user("j", password="not-a-real-pass-123"))
+        u = User.objects.create_user("j", password="not-a-real-pass-123")
+        StrategyConfig.objects.update(owner=u)
+        self.client.force_login(u)
 
     def test_fragment_and_card(self):
         bars = [bar(0, 99, 101), bar(1, 98, 106), bar(2, 104, 110), bar(3, 108, 112), bar(4, 109, 120)]

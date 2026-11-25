@@ -129,7 +129,7 @@ class SweepViewTests(TestCase):
         self.user = User.objects.create_user("me", password="not-a-real-pass-123")
         self.client.force_login(self.user)
         self.coin = Coin.objects.create(symbol="BTC", chain="BTC", gate_currency="BTC", verified_at=dj_tz.now())
-        self.cfg = StrategyConfig.objects.create(name="base", strategy_key="pdh_breakout", coin=self.coin,
+        self.cfg = StrategyConfig.objects.create(owner=self.user, name="base", strategy_key="pdh_breakout", coin=self.coin,
                                                  interval="15m", params={"target_r": 2.0}, risk={"risk_pct": 1.0})
 
     def post(self, **grid):
@@ -228,5 +228,6 @@ class SmartSearchAndWalkForwardTests(TestCase):
             self.assertEqual(f["train"][1], f["test"][0])  # tested right after the window it was picked on
         self.assertEqual(s.total, 3 * 3)
         user = User.objects.create_user("wf", password="not-a-real-pass-123")
+        StrategyConfig.objects.update(owner=user)
         self.client.force_login(user)
         self.assertContains(self.client.get(reverse("trading:sweep_detail", args=[s.pk])), "Walk-forward")

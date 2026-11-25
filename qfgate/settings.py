@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "intel",
     "cascades",
     "ledger",
+    "accounts",
 ]
 
 MIDDLEWARE = [
@@ -78,6 +79,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "market.context_processors.services",
+                "accounts.context_processors.trading_settings",
             ],
         },
     },
@@ -156,6 +158,10 @@ GATE = {
     "API_SECRET": os.environ.get("GATE_API_SECRET", ""),
     "TIMEOUT": float(os.environ.get("GATE_TIMEOUT", "20")),
 }
+
+# Users' own exchange API keys are stored encrypted with this key (Fernet). Generate it with
+# `python manage.py make_encryption_key`; keep a backup: without it, saved keys can't be read.
+FIELD_ENCRYPTION_KEY = os.environ.get("FIELD_ENCRYPTION_KEY", "")
 
 # Portfolio ledger: importing the real Gate.io account's history. A separate READ-ONLY key
 # (spot + wallet read; no trading, no withdrawals). Read from the environment only.

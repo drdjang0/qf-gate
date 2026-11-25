@@ -4,7 +4,7 @@
 <div class="card">
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
     <h2 style="margin:0">Cascades</h2>
-    <span class="badge">dry-run</span>
+    <span class="badge">dry-run or live</span>
     <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
       <a class="btn" href="{% url 'cascades:backtest_create' %}">Backtest a cascade</a>
       <a class="btn primary" href="{% url 'cascades:create' %}">+ New cascade</a>
@@ -19,7 +19,7 @@
       <th class="num">Realised</th><th class="num">Open P&amp;L</th><th class="num">Last price</th><th>Started</th></tr></thead>
     <tbody>{% for c in cascades %}
       <tr><td><a href="{% url 'cascades:detail' c.pk %}">#{{ c.pk }}</a> {% if c.name %}<span class="muted">{{ c.name }}</span>{% endif %}</td>
-        <td>{{ c.coin.pair }}</td><td class="muted">{{ c.get_kind_display }}</td>
+        <td>{{ c.coin.pair }}{% if c.mode == 'live' %} <span class="badge warn">live</span>{% endif %}</td><td class="muted">{{ c.get_kind_display }}</td>
         <td><span class="badge {% if c.status == 'active' %}ok{% elif c.status == 'pending_trigger' or c.status == 'held' %}warn{% elif c.status == 'cancelled' %}err{% endif %}">{{ c.get_status_display }}</span>
           {% if c.last_error %}<span class="err" title="{{ c.last_error }}">!</span>{% endif %}</td>
         <td class="num">{{ c.t.invested|floatformat:2 }}</td>

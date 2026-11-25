@@ -46,9 +46,37 @@ class SyncError(RuntimeError):
     pass
 
 
-def configured() -> bool:
+def configured(owner=None) -> bool:
+    """Can this owner's account be synced? (their own key from the API keys page, or the server's read key)"""
+    return credentials_for(owner) is not None
+
+
+def credentials_for(owner) -> tuple[str, str] | None:
+    if owner is not None:
+        from accounts.crypto import KeyStoreError
+        from accounts.keys import gate_credentials
+
+        try:
+            creds = gate_credentials(owner)
+        except KeyStoreError:
+            creds = None
+        if creds:
+            return creds
     cfg = getattr(settings, "LEDGER", {})
-    return bool(cfg.get("GATE_KEY") and cfg.get("GATE_SECRET"))
+    if cfg.get("GATE_KEY") and cfg.get("GATE_SECRET"):
+        from accounts.access import operator
+
+        op = operator()
+        if owner is None or (op is not None and owner.pk == op.pk):
+            return cfg["GATE_KEY"], cfg["GATE_SECRET"]
+    return None
+
+
+def client_for(owner) -> "ReadClient":
+    creds = credentials_for(owner)
+    if not creds:
+        raise SyncError("No Gate.io API key: add yours on Account → API keys.")
+    return ReadClient(*creds)
 
 
 class ReadClient:
@@ -158,13 +186,37 @@ def trade_row(acc: Account, r: dict, coins: dict, bots: dict, price_lookup=price
         fee_quote = Decimal(0)
     oid = str(r.get("order_id") or "")
     text = str(r.get("text") or "")
-    from_bot = bots.get(oid)
+    route, source = order_source(oid, text, bots)
     return Transaction(
         account=acc, kind="trade", market="spot", base=base, quote=quote, coin=coins.get(pair), side=r["side"],
         qty=qty, price=price, fee=fee, fee_currency=fc, fee_quote=fee_quote, estimated=estimated, executed_at=at,
-        route="bot" if from_bot or text.startswith("t-qfgate") else "gate",
-        source=from_bot or ("QF-gate order" if text.startswith("t-qfgate") else f"Gate.io {r.get('role', '')}".strip()),
+        route=route, source=source or f"Gate.io {r.get('role', '')}".strip(),
         source_key=f"gate:spot:trade:{r['id']}", order_id=oid, raw=r)
+
+
+def order_source(order_id: str, text: str, bots: dict) -> tuple[str, str]:
+    """Which part of QF-gate made an order, from our client id (Gate `text`) or a bot's recorded order id:
+    t-c<level>b/s… = a live cascade level, t-b<bot>x… / t-qfgate… = a bot. Anything else was made on Gate.io."""
+    import re
+
+    m = re.match(r"t-c(\d+)([bs])", text)
+    if m:
+        from cascades.models import CascadeLevel
+
+        lv = CascadeLevel.objects.filter(pk=int(m.group(1))).select_related("cascade").first()
+        if lv is not None:
+            c = lv.cascade
+            name = f" · {c.name}" if c.name else ""
+            return "cascade", f"Cascade #{c.pk}{name} · L{lv.index} {'buy' if m.group(2) == 'b' else 'sell'}"[:120]
+        return "cascade", "Cascade order"
+    if bots.get(order_id):
+        return "bot", bots[order_id]
+    m = re.match(r"t-b(\d+)x", text)
+    if m:
+        return "bot", f"Bot #{m.group(1)}"
+    if text.startswith("t-qf"):
+        return "bot", "QF-gate order"
+    return "gate", ""
 
 
 def transfer_row(acc: Account, r: dict, kind: str, price_lookup=price_at) -> Transaction | None:
@@ -250,18 +302,26 @@ def sync_stream(acc: Account, stream: str, client, now: datetime | None = None, 
 
 
 def sync_account(acc: Account, client=None, now=None, max_windows: int = 12) -> int:
-    client = client or ReadClient()
+    client = client or client_for(acc.owner)
     return sum(sync_stream(acc, s, client, now, max_windows) for s in STREAMS)
 
 
 def sync_all() -> int:
-    """Worker task: sync every Gate-synced account when a read-only key is configured."""
-    if not configured():
-        return 0
-    account(GATE)
+    """Worker task: sync every Gate-synced account whose owner has a key."""
+    from accounts.models import ExchangeKey
+
+    for k in ExchangeKey.objects.filter(is_active=True, owner__is_active=True).select_related("owner"):
+        account(GATE, k.owner)  # a user with a key gets their Gate.io account even before opening Portfolio
     total = 0
-    for acc in Account.objects.filter(sync=Account.Sync.GATE):
-        total += sync_account(acc, max_windows=6)
+    for acc in Account.objects.filter(sync=Account.Sync.GATE).select_related("owner"):
+        if acc.owner is not None and not acc.owner.is_active:
+            continue
+        if not configured(acc.owner):
+            continue
+        try:
+            total += sync_account(acc, max_windows=6)
+        except SyncError as exc:
+            log.warning("Ledger sync %s: %s", acc, exc)
     return total
 
 
@@ -269,7 +329,7 @@ def sync_all() -> int:
 
 def check_balances(acc: Account, client=None) -> BalanceCheck:
     """Compare the ledger's net amount of every currency with Gate.io's real spot balance."""
-    client = client or ReadClient()
+    client = client or client_for(acc.owner)
     real = {}
     for r in client.get("/spot/accounts"):
         amount = to_dec(r.get("available") or "0") + to_dec(r.get("locked") or "0")
@@ -293,10 +353,10 @@ def check_balances(acc: Account, client=None) -> BalanceCheck:
 
 
 def check_all() -> int:
-    if not configured():
-        return 0
     n = 0
-    for acc in Account.objects.filter(sync=Account.Sync.GATE):
+    for acc in Account.objects.filter(sync=Account.Sync.GATE).select_related("owner"):
+        if not configured(acc.owner):
+            continue
         try:
             check_balances(acc)
             n += 1

@@ -11,9 +11,9 @@ from .models import Account, Transaction
 from .pnl import METHODS
 
 
-def scope_choices() -> list[tuple[str, str]]:
+def scope_choices(user=None) -> list[tuple[str, str]]:
     choices = [("real", "All real-money accounts"), ("sim", "All simulated accounts")]
-    for a in Account.objects.all():
+    for a in Account.objects.filter(owner=user):
         choices.append((str(a.pk), f"{a.name} ({a.get_kind_display().lower()})"))
     return choices
 
@@ -29,9 +29,9 @@ class FilterForm(forms.Form):
     route = forms.ChoiceField(required=False, choices=[("", "Any route")] + list(Transaction.Route.choices))
     kind = forms.ChoiceField(required=False, choices=[("", "Any kind")] + list(Transaction.Kind.choices))
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["scope"].choices = scope_choices()
+        self.fields["scope"].choices = scope_choices(user)
 
     def period(self) -> tuple[datetime | None, datetime | None]:
         d = self.cleaned_data
@@ -58,6 +58,10 @@ class TransactionForm(forms.ModelForm):
         labels = {"base": "Coin", "quote": "Quote currency", "fee_currency": "Fee currency"}
         widgets = {"side": forms.Select(choices=[("buy", "Buy"), ("sell", "Sell"), ("in", "In (adjustment)"),
                                                  ("out", "Out (adjustment)")])}
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["account"].queryset = Account.objects.filter(owner=user)
 
     def clean(self):
         d = super().clean()

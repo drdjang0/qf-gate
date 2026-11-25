@@ -65,6 +65,13 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  account:  # fill listener: Gate.io private WebSocket for every user's key (live cascades, bots, portfolio)
+    <<: *app
+    command: python manage.py stream_account
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   pgdata:
   archive:

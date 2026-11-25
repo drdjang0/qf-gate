@@ -68,13 +68,14 @@
     <a href="{% url 'market:screener' %}">Screener</a>
     <a href="{% url 'market:scanner' %}">Scanner</a>
     <a href="{% url 'intel:index' %}">Intel</a>
-    <a href="{% url 'trading:strategy_list' %}">Strategies</a>
+    {% if not qf_control or qf_control.strategies_enabled %}<a href="{% url 'trading:strategy_list' %}">Strategies</a>{% endif %}
     <a href="{% url 'cascades:index' %}">Cascades</a>
-    <a href="{% url 'trading:control' %}">Bots</a>
+    {% if not qf_control or qf_control.strategies_enabled %}<a href="{% url 'trading:control' %}">Bots</a>{% endif %}
     <a href="{% url 'ledger:index' %}">Portfolio</a>
     <a href="{% url 'market:job_list' %}">Jobs</a>
     <a href="{% url 'market:export_levels' %}">Export all</a>
-    <a href="{% url 'admin:index' %}">Admin</a>
+    {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin</a>{% endif %}
+    <a href="{% url 'accounts:settings' %}" title="Settings, API key{% if user.is_staff %}, users{% endif %}">{{ user.username }}{% if qf_control.live_enabled %} <span class="badge" style="color:#b45309;border-color:#b45309">live</span>{% endif %}</a>
     <form class="inline" method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn">Log out</button></form>
   </nav>
   {% endif %}

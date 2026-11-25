@@ -17,6 +17,7 @@ How a bot works
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from django.conf import settings
@@ -32,7 +33,7 @@ from market.services.chart import CHART_INTERVALS
 
 from . import notify, signals_share
 from .backtest import warmup
-from .brokers import OrderError, get_broker, live_allowed
+from .brokers import GateBroker, OrderError, client_id, get_broker, live_allowed
 from .data import load_bars
 from .engine import Engine, size_for
 from .models import Bot, BotOrder, StrategyConfig, Trade, TradingControl
@@ -44,56 +45,83 @@ log = logging.getLogger("trading.bots")
 # -- risk limits and the kill switch --------------------------------------------------------------
 
 
-def _capital(mode: str) -> float:
-    bots = Bot.objects.filter(status=Bot.Status.RUNNING, mode=mode)
+ALL = object()  # owner filter sentinel: every user's bots (operator tools, legacy single-user calls)
+
+
+def _mine(qs, owner, path: str = "config__owner"):
+    """Limit to one user's rows (multi-user). ALL keeps everything; owner None = rows without an owner."""
+    if owner is ALL:
+        return qs
+    return qs.filter(**{path: owner}) if owner is not None else qs.filter(**{f"{path}__isnull": True})
+
+
+def _owner_of(bot: Bot):
+    return bot.config.owner if bot.config.owner_id else None
+
+
+def _capital(mode: str, owner=ALL) -> float:
+    bots = _mine(Bot.objects.filter(status=Bot.Status.RUNNING, mode=mode), owner)
     return sum(clean_params(RISK_PARAMS, b.risk)["starting_cash"] for b in bots) or 1.0
 
 
-def realised_today(mode: str) -> float:
+def realised_today(mode: str, owner=ALL) -> float:
     start = dj_tz.now().astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    return BotOrder.objects.filter(bot__mode=mode, side="sell", status=BotOrder.Status.FILLED,
-                                   created_at__gte=start).aggregate(s=Sum("pnl"))["s"] or 0.0
+    qs = BotOrder.objects.filter(bot__mode=mode, side="sell", status=BotOrder.Status.FILLED, created_at__gte=start)
+    return _mine(qs, owner, "bot__config__owner").aggregate(s=Sum("pnl"))["s"] or 0.0
 
 
-def exposure(mode: str) -> float:
-    return sum(b.pos["qty"] * b.pos["avg"] for b in Bot.objects.filter(status=Bot.Status.RUNNING, mode=mode) if b.pos)
+def exposure(mode: str, owner=ALL) -> float:
+    bots = _mine(Bot.objects.filter(status=Bot.Status.RUNNING, mode=mode), owner)
+    return sum(b.pos["qty"] * b.pos["avg"] for b in bots if b.pos)
 
 
 def entry_block_reason(bot: Bot, notional: float) -> str | None:
-    """Why a new entry may not be sent right now (None = allowed). Exits are never checked."""
-    c = TradingControl.get()
+    """Why a new entry may not be sent right now (None = allowed). Exits are never checked.
+    Every limit is the bot owner's own (multi-user); a limit left empty / 0 is off."""
+    owner = _owner_of(bot)
+    c = TradingControl.for_user(owner)
     if c.halted:
         return f"kill switch on ({c.halted_reason or 'halted'})"
+    if bot.mode == Bot.Mode.LIVE and not c.live_enabled:
+        return "live trading is switched off in your settings"
     hour_ago = dj_tz.now() - timedelta(hours=1)
-    if BotOrder.objects.filter(created_at__gte=hour_ago, status=BotOrder.Status.FILLED).count() >= c.max_orders_per_hour:
+    recent = _mine(BotOrder.objects.filter(created_at__gte=hour_ago, status=BotOrder.Status.FILLED), owner,
+                   "bot__config__owner")
+    if c.max_orders_per_hour and recent.count() >= c.max_orders_per_hour:
         return f"more than {c.max_orders_per_hour} orders in the last hour"
-    loss = -realised_today(bot.mode)
-    if c.max_daily_loss_pct and loss >= _capital(bot.mode) * c.max_daily_loss_pct / 100:
-        halt(f"daily loss limit {c.max_daily_loss_pct}% reached ({loss:,.2f})", by="risk limit")
+    loss = -realised_today(bot.mode, owner)
+    if c.max_daily_loss_pct and loss >= _capital(bot.mode, owner) * c.max_daily_loss_pct / 100:
+        halt(f"daily loss limit {c.max_daily_loss_pct}% reached ({loss:,.2f})", by="risk limit", owner=owner)
         return "daily loss limit reached"
-    if c.max_exposure and exposure(bot.mode) + notional > c.max_exposure:
+    if c.max_exposure and exposure(bot.mode, owner) + notional > c.max_exposure:
         return f"max exposure {c.max_exposure:,.2f} would be exceeded"
     return None
 
 
-def halt(reason: str, by: str = "user") -> None:
-    c = TradingControl.get()
+def halt(reason: str, by: str = "user", owner=None) -> None:
+    c = TradingControl.for_user(owner)
     if not c.halted:
         TradingControl.objects.filter(pk=c.pk).update(halted=True, halted_reason=reason[:255], halted_at=dj_tz.now())
-        notify.notify("control.halt", f"{reason} (by {by}). No new entries; open positions are still managed.")
+        who = f" [{owner.username}]" if owner is not None else ""
+        notify.notify("control.halt", f"{reason} (by {by}){who}. No new entries; open positions are still managed.")
 
 
-def resume(by: str = "user") -> None:
-    TradingControl.get()
-    TradingControl.objects.filter(pk=1).update(halted=False, halted_reason="", halted_at=None)
+def resume(by: str = "user", owner=None) -> None:
+    c = TradingControl.for_user(owner)
+    TradingControl.objects.filter(pk=c.pk).update(halted=False, halted_reason="", halted_at=None)
     notify.notify("control.resume", f"Entries allowed again (by {by}).")
 
 
-def kill(by: str = "user", broker=None) -> int:
-    """Kill switch: halt entries, sell every open bot position at market, stop all bots."""
-    halt("kill switch: flatten and stop", by=by)
+def kill(by: str = "user", broker=None, owner=ALL) -> int:
+    """Kill switch: halt entries, sell every open bot position at market, stop all bots (of one user, or all)."""
+    if owner is ALL:
+        halt("kill switch: flatten and stop", by=by)
+        for c in TradingControl.objects.exclude(owner=None):
+            halt("kill switch: flatten and stop", by=by, owner=c.owner)
+    else:
+        halt("kill switch: flatten and stop", by=by, owner=owner)
     sold = 0
-    for b in Bot.objects.filter(status=Bot.Status.RUNNING):
+    for b in _mine(Bot.objects.filter(status=Bot.Status.RUNNING), owner):
         if b.pos and execute(b.pk, "sell", "kill switch", broker=broker):
             sold += 1
         stop_bot(b, note=f"kill switch ({by})")
@@ -105,17 +133,23 @@ def kill(by: str = "user", broker=None) -> int:
 
 def promotion_status(config: StrategyConfig) -> dict:
     """Checklist a config must pass before a live bot may start (dry-run -> live promotion)."""
-    c = TradingControl.get()
-    ok_live, missing = live_allowed()
+    owner = config.owner if config.owner_id else None
+    c = TradingControl.for_user(owner)
+    ok_live, missing = live_allowed(owner)
     dry = config.bots.filter(mode=Bot.Mode.DRY_RUN).order_by("started_at").first()
     days = ((dry.stopped_at or dj_tz.now()) - dry.started_at).days if dry else 0
     check = config.last_check or {}
-    items = [
-        {"ok": days >= c.min_dry_run_days, "text": f"Dry-run for at least {c.min_dry_run_days} days (has {days})"},
-        {"ok": bool(check.get("lookahead", {}).get("ok")), "text": "Strategy checks: no look-ahead"},
-        {"ok": bool(check) and check.get("warmup", {}).get("ok") is not False, "text": "Strategy checks: warm-up long enough"},
-        *({"ok": False, "text": m} for m in missing),
-    ]
+    items = []
+    if c.require_checks:
+        items += [
+            {"ok": days >= c.min_dry_run_days, "text": f"Dry-run for at least {c.min_dry_run_days} days (has {days})"},
+            {"ok": bool(check.get("lookahead", {}).get("ok")), "text": "Strategy checks: no look-ahead"},
+            {"ok": bool(check) and check.get("warmup", {}).get("ok") is not False,
+             "text": "Strategy checks: warm-up long enough"},
+        ]
+    else:
+        items.append({"ok": True, "text": "Strategy checks switched off in your settings (your own risk)"})
+    items += [{"ok": False, "text": m} for m in missing]
     if ok_live:
         items.append({"ok": True, "text": "Live trading switches are on"})
     return {"ok": all(i["ok"] for i in items), "items": items}
@@ -123,6 +157,8 @@ def promotion_status(config: StrategyConfig) -> dict:
 
 def start_bot(config: StrategyConfig, mode: str = Bot.Mode.DRY_RUN) -> Bot:
     get_strategy(config.strategy_key)(config.params)  # validate
+    if config.owner_id and not TradingControl.for_user(config.owner).strategies_enabled:
+        raise ValueError("Strategies are switched off in your settings (Account → Trading settings).")
     if clean_params(RISK_PARAMS, config.risk)["market"] == "futures" or config.strategy_key.endswith("_short"):
         raise ValueError("Bots trade Gate.io spot only: futures / short strategies run in backtests, sweeps and "
                          "paper trading for now.")
@@ -184,12 +220,21 @@ def execute(bot_id: int, side: str, reason: str, ref_price: float | None = None,
             return o
     else:
         qty = st["pos"]["qty"]
-    # claim the order slot (compare-and-set) before talking to the broker
-    if not Bot.objects.filter(pk=bot.pk, version=bot.version).update(version=bot.version + 1, state={**st, "busy": True}):
+    # claim the order slot (compare-and-set) before talking to the broker; remember our order id first,
+    # so an order interrupted by a crash can be found on Gate.io afterwards (see recover_stuck)
+    cid = client_id(f"b{bot.pk}x")
+    busy = {**st, "busy": True, "busy_since": time.time(), "client_id": cid, "busy_side": side, "busy_reason": reason,
+            "busy_ref": price, "busy_stop": stop, "busy_target": target}
+    if not Bot.objects.filter(pk=bot.pk, version=bot.version).update(version=bot.version + 1, state=busy):
         return None
     version = bot.version + 1
     try:
-        fill = (broker or get_broker(bot)).market(bot.config.coin.pair, side, qty)
+        b = broker or get_broker(bot)
+        if side == "sell" and (st.get("pos") or {}).get("stop_order"):
+            done = _settle_exchange_stop(bot, b, version, st, price)
+            if done is not None:
+                return done  # the stop on Gate.io had already sold the position
+        fill = b.market(bot.config.coin.pair, side, qty, **({"text": cid} if isinstance(b, GateBroker) else {}))
     except (OrderError, ExchangeError) as exc:
         Bot.objects.filter(pk=bot.pk, version=version).update(version=version + 1, state={**st, "busy": False},
                                                               last_error=str(exc)[:2000])
@@ -197,6 +242,17 @@ def execute(bot_id: int, side: str, reason: str, ref_price: float | None = None,
                                     status=BotOrder.Status.ERROR, message=str(exc)[:2000])
         notify.notify("bot.error", f"#{bot.pk} {side} {qty:g} {bot.config.coin.pair} failed: {exc}")
         return o
+    o = _book_fill(bot, version, st, side, reason, qty, price, fill, stop, target)
+    if side == "buy" and isinstance(b, GateBroker) and stop and bot.risk.get("exchange_stop", True):
+        _place_exchange_stop(bot, b, fill.qty, stop)
+    return o
+
+
+def _book_fill(bot: Bot, version: int, st: dict, side: str, reason: str, qty: float, price: float, fill,
+               stop=None, target=None) -> BotOrder:
+    """Apply a fill to the bot's state and record the order (shared by normal orders, a stop that fired on
+    Gate.io and an order recovered after a crash)."""
+    st = {k: v for k, v in st.items() if not k.startswith("busy_") and k != "client_id"}
     pnl = None
     if side == "buy":
         st["cash"] -= fill.qty * fill.avg_price + fill.fee
@@ -213,11 +269,108 @@ def execute(bot_id: int, side: str, reason: str, ref_price: float | None = None,
     o = BotOrder.objects.create(bot=bot, side=side, reason=reason, qty=qty, ref_price=price,
                                 status=BotOrder.Status.FILLED, filled_qty=fill.qty, avg_price=fill.avg_price,
                                 fee=fill.fee, pnl=pnl, exchange_id=fill.exchange_id)
-    tail = f", P&L {pnl:+,.2f}" if pnl is not None else f", stop {stop:,.6g}" + (f", target {target:,.6g}" if target else "")
+    tail = (f", P&L {pnl:+,.2f}" if pnl is not None
+            else (f", stop {stop:,.6g}" if stop else "") + (f", target {target:,.6g}" if target else ""))
     mode = "DRY-RUN" if bot.mode == Bot.Mode.DRY_RUN else "LIVE"
     notify.notify("bot.fill", f"#{bot.pk} {mode} {side.upper()} {fill.qty:.6g} {bot.config.coin.pair} "
                               f"@ {fill.avg_price:,.6g} ({reason}){tail}",
                   {"bot": bot.pk, "side": side, "qty": fill.qty, "price": fill.avg_price, "pnl": pnl})
+    return o
+
+
+# -- live safety: the stop on Gate.io, and orders interrupted by a crash ----------------------------------
+
+
+def _place_exchange_stop(bot: Bot, broker, qty: float, stop: float) -> None:
+    """Also put the stop-loss on Gate.io as a price-triggered sell, so it holds while QF-gate is down."""
+    try:
+        sid = broker.place_stop(bot.config.coin.pair, qty, stop)
+    except (OrderError, ExchangeError) as exc:
+        _error(bot, f"stop on Gate.io not placed: {exc}")
+        notify.notify("bot.error", f"#{bot.pk} LIVE: the stop on Gate.io could not be placed ({exc}); QF-gate "
+                                   f"still watches the stop itself.")
+        return
+    fresh = Bot.objects.get(pk=bot.pk)
+    if fresh.pos:
+        _remember(bot.pk, pos={**fresh.pos, "stop_order": sid, "stop_on_exchange": stop})
+
+
+def _move_exchange_stop(bot: Bot, pos: dict, new_stop: float, broker=None) -> dict:
+    """The engine moved the stop (trailing / break-even): move the order on Gate.io too."""
+    if not pos.get("stop_order") or pos.get("stop_on_exchange") == new_stop or bot.mode != Bot.Mode.LIVE:
+        return pos
+    try:
+        b = broker or get_broker(bot)
+        b.cancel_stop(pos["stop_order"])
+        sid = b.place_stop(bot.config.coin.pair, pos["qty"], new_stop)
+        return {**pos, "stop_order": sid, "stop_on_exchange": new_stop}
+    except (OrderError, ExchangeError) as exc:
+        _error(bot, f"moving the stop on Gate.io failed: {exc}")
+        return pos
+
+
+def _settle_exchange_stop(bot: Bot, broker, version: int, st: dict, price: float) -> BotOrder | None:
+    """Before selling: cancel our stop on Gate.io; if it already fired, book that sale instead."""
+    pos = st["pos"]
+    info = broker.stop_status(pos["stop_order"])
+    if info.get("status") == "finish" and info.get("fired_order_id"):
+        order = broker.get_order(bot.config.coin.pair, str(info["fired_order_id"]))
+        fill = broker.fill_from(order, bot.config.coin.pair)
+        if fill is not None:
+            return _book_fill(bot, version, st, "sell", "stop (on Gate.io)", pos["qty"], price, fill)
+    if info.get("status") == "open":
+        broker.cancel_stop(pos["stop_order"])
+    return None
+
+
+def check_exchange_stop(bot: Bot, broker=None) -> BotOrder | None:
+    """Periodic (live bots with a stop on Gate.io): did it fire while we were not looking?"""
+    st = dict(bot.state or {})
+    pos = st.get("pos") or {}
+    if bot.mode != Bot.Mode.LIVE or not pos.get("stop_order") or st.get("busy"):
+        return None
+    b = broker or get_broker(bot)
+    info = b.stop_status(pos["stop_order"])
+    if info.get("status") != "finish" or not info.get("fired_order_id"):
+        return None
+    if not Bot.objects.filter(pk=bot.pk, version=bot.version).update(version=bot.version + 1, state={**st, "busy": True}):
+        return None
+    order = b.get_order(bot.config.coin.pair, str(info["fired_order_id"]))
+    fill = b.fill_from(order, bot.config.coin.pair)
+    if fill is None:
+        Bot.objects.filter(pk=bot.pk).update(state={**st, "busy": False})
+        return None
+    return _book_fill(bot, bot.version + 1, st, "sell", "stop (on Gate.io)", pos["qty"], fill.avg_price, fill)
+
+
+RECOVER_AFTER_SECONDS = 120
+
+
+def recover_stuck(bot: Bot, broker=None) -> BotOrder | None:
+    """An order slot left busy (the process died between sending and saving): look the order up on Gate.io
+    by our client id and book it if it filled; otherwise free the slot. Dry-run fills are instant and send
+    nothing, so a stuck dry-run slot is simply freed."""
+    st = dict(bot.state or {})
+    if not st.get("busy") or time.time() - float(st.get("busy_since") or 0) < RECOVER_AFTER_SECONDS:
+        return None
+    side = st.get("busy_side")
+    found = None
+    if bot.mode == Bot.Mode.LIVE and st.get("client_id") and side:
+        try:
+            b = broker or get_broker(bot)
+            order = b.find_order(bot.config.coin.pair, st["client_id"], float(st["busy_since"]))
+            found = b.fill_from(order, bot.config.coin.pair) if order else None
+        except (OrderError, ExchangeError) as exc:
+            _error(bot, f"recovering an interrupted order failed: {exc}")
+            return None
+    clean = {k: v for k, v in st.items() if not k.startswith("busy_") and k != "client_id"}
+    if found is None:
+        Bot.objects.filter(pk=bot.pk, version=bot.version).update(version=bot.version + 1, state={**clean, "busy": False})
+        notify.notify("bot.error", f"#{bot.pk}: an interrupted {side or ''} order was not filled; the bot carries on.")
+        return None
+    o = _book_fill(bot, bot.version, clean, side, (st.get("busy_reason") or "") + " (recovered)",
+                   found.qty, float(st.get("busy_ref") or found.avg_price), found, st.get("busy_stop"), st.get("busy_target"))
+    notify.notify("bot.fill", f"#{bot.pk}: recovered an interrupted {side} order from Gate.io.")
     return o
 
 
@@ -244,6 +397,15 @@ def step_bot(bot_id: int, now: datetime | None = None, broker=None) -> int:
     bot = Bot.objects.select_related("config__coin").get(pk=bot_id)
     if bot.status != Bot.Status.RUNNING:
         return 0
+    if (bot.state or {}).get("busy"):
+        recover_stuck(bot, broker if bot.mode == Bot.Mode.LIVE else None)
+        bot.refresh_from_db()
+    elif bot.mode == Bot.Mode.LIVE and (bot.pos or {}).get("stop_order"):
+        try:
+            check_exchange_stop(bot, broker)
+        except (OrderError, ExchangeError) as exc:
+            _error(bot, f"checking the stop on Gate.io failed: {exc}")
+        bot.refresh_from_db()
     strategy = get_strategy(bot.strategy_key)(bot.params)
     now = now or datetime.now(timezone.utc)
     step = CHART_INTERVALS[bot.interval]
@@ -281,7 +443,10 @@ def step_bot(bot_id: int, now: datetime | None = None, broker=None) -> int:
         elif engine.pos is None and closed:
             sent += bool(execute(bot.pk, "sell", closed[-1]["exit_reason"], broker=broker))
         elif engine.pos and not Bot.objects.get(pk=bot.pk).state.get("busy"):
-            _remember(bot.pk, pos={**pos, "stop": engine.pos["stop"], "target": engine.pos["target"]})
+            moved = {**pos, "stop": engine.pos["stop"], "target": engine.pos["target"]}
+            if engine.pos["stop"]:
+                moved = _move_exchange_stop(bot, moved, engine.pos["stop"], broker)
+            _remember(bot.pk, pos=moved)
     elif pending and pending.get("action") == "buy" and engine.pos is None and st.get("acted") != engine.last_time:
         sent += bool(execute(bot.pk, "buy", pending.get("reason") or "signal", stop=pending.get("stop"),
                              target=pending.get("target"), broker=broker))
